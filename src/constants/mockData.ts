@@ -121,6 +121,16 @@ export const upcomingBills: BillItem[] = [
     status: 'Due',
     icon: 'water',
   },
+  {
+    id: 'b3',
+    name: 'Internet',
+    provider: 'Savannah',
+    amount: 67000,
+    dueDate: '28 July',
+    frequency: 'Monthly',
+    status: 'Due',
+    icon: 'flash',
+  },
 ];
 
 export const paidBills: BillItem[] = [

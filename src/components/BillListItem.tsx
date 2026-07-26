@@ -45,8 +45,6 @@ export default function BillListItem({ bill, onPress }: BillListItemProps) {
         <Text style={styles.amount}>UGX {formatCurrency(bill.amount)}</Text>
         <Text style={[styles.status, { color: isPaid ? colors.success : colors.warning }]}>{bill.status}</Text>
       </View>
-
-      <Ionicons name="chevron-forward" size={rf(18)} color={colors.textMuted} style={{ marginLeft: 6 }} />
     </TouchableOpacity>
   );
 }
@@ -56,17 +54,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderRadius: moderateScale(16),
-    padding: moderateScale(12),
+    borderRadius: moderateScale(10),
+    padding: moderateScale(5),
     marginBottom: moderateScale(10),
   },
   iconWrap: {
     width: moderateScale(44),
     height: moderateScale(44),
-    borderRadius: moderateScale(12),
+    borderRadius: moderateScale(8),
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: moderateScale(12),
+    marginRight: moderateScale(5),
   },
   middle: {
     flex: 1,
