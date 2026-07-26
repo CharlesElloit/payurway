@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Easing, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { colors } from '../theme/colors';
 import { rf, moderateScale } from '../utils/responsive';
-
-type AuthStatus = 'checking' | 'idle' | 'authenticating' | 'error' | 'unsupported';
+import FingerprintScanner, { ScannerStatus } from '../components/FingerprintScanner';
 
 interface BiometricLoginScreenProps {
     userName: string;
@@ -15,38 +14,37 @@ interface BiometricLoginScreenProps {
 }
 
 export default function BiometricLoginScreen({ userName, avatarUrl, onAuthenticated }: BiometricLoginScreenProps) {
-    const [status, setStatus] = useState<AuthStatus>('checking');
+    const [scannerStatus, setScannerStatus] = useState<ScannerStatus>('idle');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [biometricLabel, setBiometricLabel] = useState('Biometrics');
-
-    const pulse = useRef(new Animated.Value(1)).current;
+    const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
-        const loop = Animated.loop(
-            Animated.sequence([
-                Animated.timing(pulse, { toValue: 1.12, duration: 900, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-                Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.in(Easing.ease), useNativeDriver: true }),
-            ])
-        );
-        loop.start();
-        return () => loop.stop();
-    }, [pulse]);
+        return () => {
+            if (resetTimer.current) clearTimeout(resetTimer.current);
+        };
+    }, []);
 
     const promptAuth = useCallback(async () => {
         setErrorMessage(null);
-        setStatus('authenticating');
+        // Our own animated scanner starts immediately — this is the UI the person
+        // actually watches. The OS-level Face ID / fingerprint confirmation below
+        // is mandated by the platform and can't be replaced, but Face ID has no
+        // real system UI, and Android's biometric sheet only appears briefly.
+        setScannerStatus('scanning');
 
         try {
             const hasHardware = await LocalAuthentication.hasHardwareAsync();
             const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
             if (!hasHardware || !isEnrolled) {
-                setStatus('unsupported');
+                setScannerStatus('error');
                 setErrorMessage(
                     !hasHardware
                         ? 'This device has no biometric hardware.'
                         : 'No biometrics are enrolled on this device. Add one in your device settings.'
                 );
+                resetTimer.current = setTimeout(() => setScannerStatus('idle'), 1400);
                 return;
             }
 
@@ -62,21 +60,33 @@ export default function BiometricLoginScreen({ userName, avatarUrl, onAuthentica
             });
 
             if (result.success) {
-                onAuthenticated();
+                setScannerStatus('success');
+                // Let the checkmark/ring animation play before handing off to Home.
+                resetTimer.current = setTimeout(onAuthenticated, 500);
             } else {
-                setStatus('error');
+                setScannerStatus('error');
                 setErrorMessage('Authentication was cancelled or did not match. Try again.');
+                resetTimer.current = setTimeout(() => setScannerStatus('idle'), 1400);
             }
         } catch (err) {
-            setStatus('error');
+            setScannerStatus('error');
             setErrorMessage('Something went wrong starting biometric authentication.');
+            resetTimer.current = setTimeout(() => setScannerStatus('idle'), 1400);
         }
     }, [onAuthenticated]);
 
     // Attempt automatically once on mount, like most banking apps do.
     useEffect(() => {
         promptAuth();
-    }, [promptAuth]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const statusLabel =
+        scannerStatus === 'scanning'
+            ? `Waiting for ${biometricLabel}…`
+            : scannerStatus === 'success'
+                ? 'Verified'
+                : null;
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -88,23 +98,26 @@ export default function BiometricLoginScreen({ userName, avatarUrl, onAuthentica
                 </View>
 
                 <View style={styles.middle}>
-                    <Animated.View style={[styles.iconRing, { transform: [{ scale: pulse }] }]}>
-                        <View style={styles.iconCircle}>
-                            <Ionicons name="finger-print" size={rf(46)} color={colors.accent} />
-                        </View>
-                    </Animated.View>
+                    <FingerprintScanner status={scannerStatus} size={moderateScale(150)} />
 
-                    {status === 'authenticating' && <Text style={styles.statusText}>Waiting for {biometricLabel}…</Text>}
-                    {(status === 'error' || status === 'unsupported') && errorMessage && (
-                        <Text style={styles.errorText}>{errorMessage}</Text>
+                    {statusLabel && (
+                        <Text style={[styles.statusText, scannerStatus === 'success' && styles.statusTextSuccess]}>
+                            {statusLabel}
+                        </Text>
                     )}
+                    {scannerStatus === 'error' && errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
                 </View>
 
                 <View style={styles.bottom}>
-                    <TouchableOpacity style={styles.primaryButton} activeOpacity={0.9} onPress={promptAuth}>
+                    <TouchableOpacity
+                        style={styles.primaryButton}
+                        activeOpacity={0.9}
+                        onPress={promptAuth}
+                        disabled={scannerStatus === 'scanning' || scannerStatus === 'success'}
+                    >
                         <Ionicons name="finger-print" size={rf(18)} color={colors.onAccent} style={{ marginRight: 8 }} />
                         <Text style={styles.primaryButtonText}>
-                            {status === 'authenticating' ? 'Authenticating…' : `Unlock with ${biometricLabel}`}
+                            {scannerStatus === 'scanning' ? 'Authenticating…' : `Unlock with ${biometricLabel}`}
                         </Text>
                     </TouchableOpacity>
 
@@ -154,27 +167,14 @@ const styles = StyleSheet.create({
     middle: {
         alignItems: 'center',
     },
-    iconRing: {
-        width: moderateScale(140),
-        height: moderateScale(140),
-        borderRadius: moderateScale(70),
-        borderWidth: 1,
-        borderColor: colors.border,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    iconCircle: {
-        width: moderateScale(104),
-        height: moderateScale(104),
-        borderRadius: moderateScale(52),
-        backgroundColor: colors.surface,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
     statusText: {
         marginTop: moderateScale(16),
         fontSize: rf(13),
         color: colors.textSecondary,
+    },
+    statusTextSuccess: {
+        color: colors.success,
+        fontWeight: '700',
     },
     errorText: {
         marginTop: moderateScale(16),
