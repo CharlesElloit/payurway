@@ -42,7 +42,6 @@ export default function BillTimelineTable({ year, rows, total }: BillTimelineTab
         <Text style={[styles.headerCell, styles.numCol]}>July {year}</Text>
         <Text style={[styles.headerCell, styles.movCol]}>Movement %</Text>
       </View>
-
       {rows.map((row) => (
         <View key={row.label} style={styles.row}>
           <Text style={[styles.rowLabel, styles.labelCol]}>{row.label}</Text>
@@ -57,9 +56,7 @@ export default function BillTimelineTable({ year, rows, total }: BillTimelineTab
           </View>
         </View>
       ))}
-
       <View style={styles.divider} />
-
       <View style={styles.row}>
         <Text style={[styles.totalLabel, styles.labelCol]}>Total</Text>
         <Text style={[styles.totalValue, styles.numCol]}>{formatCurrency(total.june)}</Text>

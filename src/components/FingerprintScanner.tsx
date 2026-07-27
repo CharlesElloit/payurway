@@ -19,13 +19,12 @@ export default function FingerprintScanner({ status, size = 140 }: FingerprintSc
     const radius = (size - strokeWidth) / 2;
     const circumference = 2 * Math.PI * radius;
 
-    const rotation = useRef(new Animated.Value(0)).current; // drives the spinning arc while scanning
-    const pulse = useRef(new Animated.Value(1)).current; // breathing icon
-    const iconScale = useRef(new Animated.Value(1)).current; // success bounce / error shake
+    const rotation = useRef(new Animated.Value(0)).current;
+    const pulse = useRef(new Animated.Value(1)).current;
+    const iconScale = useRef(new Animated.Value(1)).current;
     const shakeX = useRef(new Animated.Value(0)).current;
-    const ringProgress = useRef(new Animated.Value(0)).current; // 0 = quarter arc, 1 = full ring
+    const ringProgress = useRef(new Animated.Value(0)).current;
 
-    // Continuous spin while scanning.
     useEffect(() => {
         let spinLoop: Animated.CompositeAnimation | null = null;
         let pulseLoop: Animated.CompositeAnimation | null = null;
@@ -99,7 +98,6 @@ export default function FingerprintScanner({ status, size = 140 }: FingerprintSc
 
     const spin = rotation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
-    // Quarter-arc while scanning/idle, sweeps to a full ring on success.
     const dashOffset = ringProgress.interpolate({
         inputRange: [0, 1],
         outputRange: [circumference * 0.75, 0],
