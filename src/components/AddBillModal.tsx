@@ -42,6 +42,7 @@ const AMOUNT_CHIPS = [5000, 10000, 20000, 50000];
 const ANIM_DURATION = 320;
 const DISMISS_DISTANCE = 100;
 const DISMISS_VELOCITY = 0.8;
+const BACKDROP_MAX_OPACITY = 1;
 
 export default function AddBillModal({ visible, onClose, onSave }: AddBillModalProps) {
     const { height: windowHeight } = useWindowDimensions();
@@ -56,6 +57,11 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
     const [repeatAutomatically, setRepeatAutomatically] = useState(true);
     const [categorySheetVisible, setCategorySheetVisible] = useState(false);
     const [frequencySheetVisible, setFrequencySheetVisible] = useState(false);
+    const backdropOpacity = translateY.interpolate({
+        inputRange: [0, windowHeight],
+        outputRange: [BACKDROP_MAX_OPACITY, 0],
+        extrapolate: 'clamp',
+    });
 
     useEffect(() => {
         if (visible) {
@@ -63,11 +69,8 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
         } else if (modalVisible) {
             animateClose(() => setModalVisible(false));
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible]);
 
-    // Triggered by the native Modal's onShow, so the slide-up starts only once
-    // the modal is actually presented — avoids any flicker on first open.
     const animateOpen = () => {
         translateY.setValue(windowHeight);
         Animated.timing(translateY, {
@@ -101,8 +104,6 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
         onClose();
     };
 
-    // Drag-to-dismiss is scoped to the handle bar only (via panHandlers below),
-    // so it never fights with scrolling the form or tapping the back button.
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
@@ -129,6 +130,7 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
             onRequestClose={onClose}
             onShow={animateOpen}
         >
+            <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} pointerEvents="none" />
             <Animated.View style={[styles.root, { transform: [{ translateY }] }]}>
                 <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
                     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -140,7 +142,6 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
                                 <Ionicons name="arrow-back" size={rf(18)} color={colors.textPrimary} />
                             </TouchableOpacity>
                             <Text style={styles.headerTitle}>Add a bill</Text>
-                            {/* Spacer keeps the title visually centered against the back button */}
                             <View style={styles.backButton} />
                         </View>
 
@@ -255,12 +256,7 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
                                     />
                                 </View>
                             </View>
-
-                            {/* <TouchableOpacity style={styles.saveButton} activeOpacity={0.9} onPress={handleSave}>
-                                <Text style={styles.saveButtonText}>Save</Text>
-                            </TouchableOpacity> */}
                         </ScrollView>
-                        {/* since it's a flex sibling of the ScrollView rather than scrolled content. */}
                         <View style={styles.footer}>
                             <TouchableOpacity style={styles.saveButton} activeOpacity={0.9} onPress={handleSave}>
                                 <Text style={styles.saveButtonText}>Save</Text>
@@ -306,6 +302,10 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: moderateScale(24),
         borderTopRightRadius: moderateScale(24),
         overflow: 'hidden',
+    },
+    backdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: colors.background,
     },
     flex: {
         flex: 1,
@@ -502,7 +502,6 @@ const styles = StyleSheet.create({
         marginTop: 2,
     },
     saveButton: {
-        // marginTop: moderateScale(24),
         backgroundColor: colors.accent,
         borderRadius: moderateScale(28),
         height: moderateScale(52),
