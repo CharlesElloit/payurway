@@ -155,3 +155,7 @@ export const paidBills: BillItem[] = [
     icon: 'water',
   },
 ];
+
+export const BILL_CATEGORIES = ['Electricity', 'Water', 'Internet', 'Rent', 'Subscription', 'Other'];
+
+export const PAYMENT_FREQUENCIES = ['Weekly', 'Monthly', 'Quarterly', 'Yearly'];

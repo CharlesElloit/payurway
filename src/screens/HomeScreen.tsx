@@ -12,6 +12,7 @@ import TabSwitcher from '../components/TabSwitcher';
 import BillListItem from '../components/BillListItem';
 import BottomTabBar, { TabKey } from '../components/BottomTabBar';
 import MyBillsHeader, { MY_BILLS_HEADER_HEIGHT } from '../components/MyBillsHeader';
+import AddBillModal from '../components/AddBillModal';
 
 import {
   user,
@@ -38,6 +39,7 @@ export default function HomeScreen() {
   const [selectedDay, setSelectedDay] = useState('20');
   const [billsTab, setBillsTab] = useState<'Upcoming' | 'Paid'>('Upcoming');
   const [activeNavTab, setActiveNavTab] = useState<TabKey>('Home');
+  const [isAddBillVisible, setIsAddBillVisible] = useState(false);
 
   // Y position of the Bill Timeline section within the scroll content, captured via onLayout.
   const [billTimelineY, setBillTimelineY] = useState(0);
@@ -74,14 +76,14 @@ export default function HomeScreen() {
 
   // Fades the chart to transparent over CHART_FADE_DISTANCE once scroll passes
   // its top edge, instead of letting it hard-clip under the sticky section.
-const chartTriggerY = chartY > 0 ? chartY : Number.MAX_SAFE_INTEGER;
- const chartFadeStart = chartTriggerY - stickySectionHeight;
+  const chartTriggerY = chartY > 0 ? chartY : Number.MAX_SAFE_INTEGER;
+  const chartFadeStart = chartTriggerY - stickySectionHeight;
 
-const chartOpacity = scrollY.interpolate({
+  const chartOpacity = scrollY.interpolate({
     inputRange: [Math.max(chartFadeStart, 0), chartFadeStart + CHART_FADE_DISTANCE],
     outputRange: [1, 0],
     extrapolate: 'clamp',
- });
+  });
 
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -96,7 +98,7 @@ const chartOpacity = scrollY.interpolate({
         height={headerHeight}
         opacity={headerOpacity}
         onBack={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
-        onAdd={() => {}}
+        onAdd={() => setIsAddBillVisible(true)}
       />
 
       <Animated.ScrollView
@@ -167,6 +169,8 @@ const chartOpacity = scrollY.interpolate({
       </Animated.ScrollView>
 
       <BottomTabBar activeTab={activeNavTab} onChange={setActiveNavTab} />
+
+      <AddBillModal visible={isAddBillVisible} onClose={() => setIsAddBillVisible(false)} />
     </SafeAreaView>
   );
 }
