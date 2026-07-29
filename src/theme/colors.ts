@@ -1,7 +1,7 @@
 export const colors = {
   background: '#000000',
   surface: '#1C1C1E',
-  surfaceAlt: '#1C1C1C',
+  surfaceAlt: '#2B2B2B',
   border: '#323131',
 
   accent: '#D4FF3F', // neon lime-green
