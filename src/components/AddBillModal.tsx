@@ -19,7 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { rf, moderateScale } from '../utils/responsive';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatDateOrdinal } from '../utils/format';
+import CalendarModal from './CalendarModal';
 import HalfModal from './Modal';
 import OptionList from './OptionList';
 import { BILL_CATEGORIES, PAYMENT_FREQUENCIES } from '../constants/mockData';
@@ -48,7 +49,6 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
     const { height: windowHeight } = useWindowDimensions();
     const [modalVisible, setModalVisible] = useState(false);
     const translateY = useRef(new Animated.Value(windowHeight)).current;
-
     const [billName, setBillName] = useState('');
     const [isNameFocused, setIsNameFocused] = useState(false);
     const [category, setCategory] = useState('');
@@ -57,6 +57,9 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
     const [repeatAutomatically, setRepeatAutomatically] = useState(true);
     const [categorySheetVisible, setCategorySheetVisible] = useState(false);
     const [frequencySheetVisible, setFrequencySheetVisible] = useState(false);
+    const [dueDate, setDueDate] = useState(new Date(2026, 6, 27));
+    const [calendarVisible, setCalendarVisible] = useState(false);
+
     const backdropOpacity = translateY.interpolate({
         inputRange: [0, windowHeight],
         outputRange: [BACKDROP_MAX_OPACITY, 0],
@@ -239,9 +242,17 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
                                 </Text>
 
                                 <Text style={[styles.cardLabel, styles.dueDateLabel]}>First due date</Text>
-                                <View style={styles.dueDateRow}>
+                                {/* <View style={styles.dueDateRow}>
                                     <Text style={styles.selectValue}>July 27th 2026</Text>
-                                </View>
+                                </View> */}
+                                 <TouchableOpacity
+                                    style={styles.dueDateRow}
+                                    activeOpacity={0.7}
+                                    onPress={() => setCalendarVisible(true)}
+                                >
+                                    <Text style={styles.selectValue}>{formatDateOrdinal(dueDate)}</Text>
+                                    <Ionicons name="calendar-outline" size={rf(18)} color={colors.textSecondary} />
+                                </TouchableOpacity>
 
                                 <View style={styles.switchRow}>
                                     <View style={styles.switchTextBlock}>
@@ -291,6 +302,13 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
                     }}
                 />
             </HalfModal>
+
+            <CalendarModal
+                visible={calendarVisible}
+                onClose={() => setCalendarVisible(false)}
+                selectedDate={dueDate}
+                onConfirm={setDueDate}
+            />
         </Modal>
     );
 }
@@ -479,6 +497,9 @@ const styles = StyleSheet.create({
         marginBottom: moderateScale(10),
     },
     dueDateRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         backgroundColor: colors.surfaceAlt,
         borderRadius: moderateScale(5),
         paddingHorizontal: moderateScale(14),
