@@ -3,6 +3,7 @@ export const colors = {
   surface: '#1C1C1E',
   surfaceAlt: '#2B2B2B',
   border: '#323131',
+  borderAlt: '#4B4B4B',
 
   accent: '#D4FF3F', // neon lime-green
   accentDark: '#9FCC1A',

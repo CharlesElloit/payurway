@@ -50,7 +50,9 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
     const [modalVisible, setModalVisible] = useState(false);
     const translateY = useRef(new Animated.Value(windowHeight)).current;
     const [billName, setBillName] = useState('');
+    const [accountNumber, setAccountNumber] = useState('');
     const [isNameFocused, setIsNameFocused] = useState(false);
+    const [isAccountNumberFocused, setIsAccountNumberFocused] = useState(false);
     const [category, setCategory] = useState('');
     const [amount, setAmount] = useState(0);
     const [frequency, setFrequency] = useState('Monthly');
@@ -145,7 +147,7 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
                                 <Ionicons name="arrow-back" size={rf(18)} color={colors.textPrimary} />
                             </TouchableOpacity>
                             <Text style={styles.headerTitle}>Add a bill</Text>
-                            <View style={styles.backButton} />
+                            <View style={{ width: 35 }} />
                         </View>
 
                         <ScrollView
@@ -161,7 +163,7 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
                                 </Text>
 
                                 <TextInput
-                                    style={[styles.input, isNameFocused && styles.inputFocused]}
+                                    style={[styles.input, { marginTop: 10 }, isNameFocused && styles.inputFocused]}
                                     value={billName}
                                     onChangeText={setBillName}
                                     onFocus={() => setIsNameFocused(true)}
@@ -169,7 +171,25 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
                                     placeholder="Bill name"
                                     placeholderTextColor={colors.textMuted}
                                 />
-
+                                <TextInput
+                                    style={[
+                                        styles.input,
+                                        {
+                                            borderTopLeftRadius: 0,
+                                            borderTopRightRadius: 0,
+                                            borderLeftWidth: 1,
+                                            borderTopWidth: 0,
+                                            borderBottomWidth: 0,
+                                            borderRightWidth: 1,
+                                            borderColor: colors.borderAlt,
+                                        }, isAccountNumberFocused && styles.inputFocused]}
+                                    value={accountNumber}
+                                    onChangeText={setAccountNumber}
+                                    onFocus={() => setIsAccountNumberFocused(true)}
+                                    onBlur={() => setIsAccountNumberFocused(false)}
+                                    placeholder="Account Number"
+                                    placeholderTextColor={colors.textMuted}
+                                />
                                 <TouchableOpacity
                                     style={styles.selectRow}
                                     activeOpacity={0.7}
@@ -245,7 +265,7 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
                                 {/* <View style={styles.dueDateRow}>
                                     <Text style={styles.selectValue}>July 27th 2026</Text>
                                 </View> */}
-                                 <TouchableOpacity
+                                <TouchableOpacity
                                     style={styles.dueDateRow}
                                     activeOpacity={0.7}
                                     onPress={() => setCalendarVisible(true)}
@@ -304,6 +324,7 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
             </HalfModal>
 
             <CalendarModal
+                allowFutureMonths={true}
                 visible={calendarVisible}
                 onClose={() => setCalendarVisible(false)}
                 selectedDate={dueDate}
@@ -315,15 +336,16 @@ export default function AddBillModal({ visible, onClose, onSave }: AddBillModalP
 
 const styles = StyleSheet.create({
     root: {
-        flex: 1,
+        flex: 0.95,
+        marginTop: 'auto',
         backgroundColor: colors.background,
-        borderTopLeftRadius: moderateScale(24),
-        borderTopRightRadius: moderateScale(24),
+        borderTopLeftRadius: moderateScale(10),
+        borderTopRightRadius: moderateScale(10),
         overflow: 'hidden',
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: colors.background,
+        backgroundColor: colors.surfaceAlt,
     },
     flex: {
         flex: 1,
@@ -375,7 +397,7 @@ const styles = StyleSheet.create({
     },
     input: {
         borderWidth: 1,
-        borderColor: colors.border,
+        borderColor: colors.borderAlt,
         borderTopLeftRadius: moderateScale(5),
         borderTopRightRadius: moderateScale(5),
         paddingHorizontal: moderateScale(14),
@@ -417,6 +439,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: moderateScale(14),
         paddingVertical: moderateScale(14),
         backgroundColor: colors.surfaceAlt,
+        borderWidth: 1,
+        borderColor: colors.borderAlt,
     },
     selectValue: {
         fontSize: rf(14),
@@ -440,6 +464,8 @@ const styles = StyleSheet.create({
         borderRadius: moderateScale(5),
         paddingHorizontal: moderateScale(10),
         paddingVertical: moderateScale(12),
+        borderWidth: 1,
+        borderColor: colors.borderAlt,
     },
     amountCurrency: {
         fontSize: rf(15),
@@ -482,6 +508,8 @@ const styles = StyleSheet.create({
         borderRadius: moderateScale(5),
         paddingHorizontal: moderateScale(10),
         paddingVertical: moderateScale(14),
+        borderWidth: 1,
+        borderColor: colors.borderAlt,
     },
     frequencyRight: {
         flexDirection: 'row',
@@ -504,6 +532,8 @@ const styles = StyleSheet.create({
         borderRadius: moderateScale(5),
         paddingHorizontal: moderateScale(14),
         paddingVertical: moderateScale(14),
+        borderWidth: 1,
+        borderColor: colors.borderAlt,
     },
     switchRow: {
         flexDirection: 'row',
