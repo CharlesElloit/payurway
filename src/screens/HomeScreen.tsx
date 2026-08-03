@@ -13,6 +13,7 @@ import BillListItem from '../components/BillListItem';
 import BottomTabBar, { TabKey } from '../components/BottomTabBar';
 import MyBillsHeader, { MY_BILLS_HEADER_HEIGHT } from '../components/MyBillsHeader';
 import AddBillModal from '../components/AddBillModal';
+import PayScanModal from '../components/PayScanModal';
 
 import {
   user,
@@ -40,6 +41,7 @@ export default function HomeScreen() {
   const [billsTab, setBillsTab] = useState<'Upcoming' | 'Paid'>('Upcoming');
   const [activeNavTab, setActiveNavTab] = useState<TabKey>('Home');
   const [isAddBillVisible, setIsAddBillVisible] = useState(false);
+  const [isPayScanVisible, setIsPayScanVisible] = useState(false);
 
   // Y position of the Bill Timeline section within the scroll content, captured via onLayout.
   const [billTimelineY, setBillTimelineY] = useState(0);
@@ -168,9 +170,20 @@ export default function HomeScreen() {
         </View>
       </Animated.ScrollView>
 
-      <BottomTabBar activeTab={activeNavTab} onChange={setActiveNavTab} />
+      {/* <BottomTabBar activeTab={activeNavTab} onChange={setActiveNavTab} /> */}
+      <BottomTabBar
+        activeTab={activeNavTab}
+        onChange={(tab) => {
+          if (tab === 'Pay') {
+            setIsPayScanVisible(true);
+          } else {
+            setActiveNavTab(tab);
+          }
+        }}
+      />
 
       <AddBillModal visible={isAddBillVisible} onClose={() => setIsAddBillVisible(false)} />
+      <PayScanModal visible={isPayScanVisible} onClose={() => setIsPayScanVisible(false)} />
     </SafeAreaView>
   );
 }

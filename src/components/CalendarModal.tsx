@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -9,6 +9,7 @@ import {
   Animated,
   Easing,
   PanResponder,
+  Pressable,
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -92,7 +93,19 @@ interface MonthGridViewProps {
   onSelect: (date: Date) => void;
 }
 
-function MonthGridView({ dates, viewMonth, today, pendingDate, width, onSelect }: MonthGridViewProps) {
+// function MonthGridView({ dates, viewMonth, today, pendingDate, width, onSelect }: MonthGridViewProps) {
+
+// Memoized so a re-render triggered by something unrelated to this specific
+// page (e.g. the toast, or the vertical drag) doesn't force all three grids
+// to redo work when their actual props haven't changed.
+const MonthGridView = React.memo(function MonthGridView({
+  dates,
+  viewMonth,
+  today,
+  pendingDate,
+  width,
+  onSelect,
+}: MonthGridViewProps) {
   return (
     <View style={[styles.grid, { width }]}>
       {dates.map((date) => {
@@ -126,7 +139,7 @@ function MonthGridView({ dates, viewMonth, today, pendingDate, width, onSelect }
       })}
     </View>
   );
-}
+})
 
 export default function CalendarModal({
   visible,
@@ -156,6 +169,24 @@ export default function CalendarModal({
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
   const [pickerYear, setPickerYear] = useState(selectedDate.getFullYear());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // These mirror the latest render's values. The horizontal PanResponder below
+  // is created ONCE via useRef, so its callbacks permanently close over
+  // whichever render first constructed them — reading viewYear/viewMonth/etc.
+  // directly there would mean every swipe recomputes from stale, first-render
+  // values forever (this was the actual cause of the month jumping/reverting).
+  // Refs are mutable and shared across renders, so dereferencing `.current`
+  // inside even a "stale" closure always yields the current value.
+  const viewYearRef = useRef(viewYear);
+  const viewMonthRef = useRef(viewMonth);
+  const todayRef = useRef(today);
+  const allowFutureMonthsRef = useRef(allowFutureMonths);
+  const windowWidthRef = useRef(windowWidth);
+  viewYearRef.current = viewYear;
+  viewMonthRef.current = viewMonth;
+  todayRef.current = today;
+  allowFutureMonthsRef.current = allowFutureMonths;
+  windowWidthRef.current = windowWidth;
 
   useEffect(() => {
     if (visible) {
@@ -209,12 +240,18 @@ export default function CalendarModal({
   const currentGrid = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
   const nextGrid = useMemo(() => buildMonthGrid(nextDate.getFullYear(), nextDate.getMonth()), [viewYear, viewMonth]);
 
-  const nextIsBlocked = !allowFutureMonths && isMonthAfterToday(nextDate.getFullYear(), nextDate.getMonth(), today);
+  // const nextIsBlocked = !allowFutureMonths && isMonthAfterToday(nextDate.getFullYear(), nextDate.getMonth(), today);
+  // Computed on-demand from refs (not a plain render-scoped const) so it's
+  // always fresh no matter which render's closure calls it.
+  const isNextMonthBlocked = () => {
+    const nd = new Date(viewYearRef.current, viewMonthRef.current + 1, 1);
+    return !allowFutureMonthsRef.current && isMonthAfterToday(nd.getFullYear(), nd.getMonth(), todayRef.current);
+  };
 
   const goToAdjacentMonth = (direction: 1 | -1) => {
     if (isTransitioningRef.current) return;
 
-    if (direction === 1 && nextIsBlocked) {
+    if (direction === 1 && isNextMonthBlocked()) {
       showBlockedToast();
       Animated.spring(pagerOffset, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
       return;
@@ -222,18 +259,36 @@ export default function CalendarModal({
 
     isTransitioningRef.current = true;
     Animated.timing(pagerOffset, {
-      toValue: -direction * windowWidth,
+      toValue: -direction * windowWidthRef.current,
       duration: MONTH_SWIPE_DURATION,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
-      const d = new Date(viewYear, viewMonth + direction, 1);
+      const d = new Date(viewYearRef.current, viewMonthRef.current + direction, 1);
       setViewYear(d.getFullYear());
       setViewMonth(d.getMonth());
-      pagerOffset.setValue(0);
-      isTransitioningRef.current = false;
+      // pagerOffset.setValue(0);
+      // isTransitioningRef.current = false;
     });
   };
+
+
+  // Resetting pagerOffset to 0 (native, instant) and the viewYear/viewMonth
+  // state update (React, asynchronous) don't complete at the same moment.
+  // Doing the reset inside the animation's own .start() callback let the
+  // transform snap back to "resting" a beat before the new month's data had
+  // actually committed into that slot — a brief flash of the old content
+  // before it self-corrected, which is what read as "delay"/"not smooth".
+  // useLayoutEffect fires synchronously right after viewYear/viewMonth commit
+  // and before the next paint, so by the time we reset the transform here,
+  // the centered slot is already showing the correct month — zero flicker.
+  useLayoutEffect(() => {
+    if (isTransitioningRef.current) {
+      pagerOffset.setValue(0);
+      isTransitioningRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewYear, viewMonth]);
 
   const snapBack = () => {
     Animated.spring(pagerOffset, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
@@ -267,7 +322,7 @@ export default function CalendarModal({
       onPanResponderMove: (_, gesture) => {
         // Dragging left (negative dx) toward a blocked next month is allowed to
         // rubber-band slightly, but doesn't reveal the (nonexistent-for-us) page.
-        if (gesture.dx < 0 && nextIsBlocked) {
+        if (gesture.dx < 0 && isNextMonthBlocked()) {
           pagerOffset.setValue(gesture.dx / 3);
         } else {
           pagerOffset.setValue(gesture.dx);

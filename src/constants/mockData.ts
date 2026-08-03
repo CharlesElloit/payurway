@@ -159,3 +159,18 @@ export const paidBills: BillItem[] = [
 export const BILL_CATEGORIES = ['Electricity', 'Water', 'Internet', 'Rent', 'Subscription', 'Other'];
 
 export const PAYMENT_FREQUENCIES = ['Weekly', 'Monthly', 'Quarterly', 'Yearly'];
+
+export interface Account {
+  id: string;
+  name: string;
+  number: string;
+  balance: number;
+}
+
+// First entry ("main") mirrors the wallet balance shown on the home screen,
+// and is the default pre-selected account in the payment confirmation flow.
+export const accounts: Account[] = [
+  { id: 'main', name: 'Main Account', number: '1002********143817', balance: 20000 },
+  { id: 'savings', name: 'Savings', number: '1002********298213', balance: 150000 },
+  { id: 'business', name: 'Business', number: '1002********881145', balance: 82000 },
+];
