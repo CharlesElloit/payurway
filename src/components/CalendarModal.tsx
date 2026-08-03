@@ -16,16 +16,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { moderateScale, rf } from '../utils/responsive';
 import HalfModal from './Modal';
+import Toast from './Toast';
 
 interface CalendarModalProps {
   visible: boolean;
   onClose: () => void;
   selectedDate: Date;
   onConfirm: (date: Date) => void;
+  /** When false, navigating to any month after the current real-world month
+   * (via swipe, chevron, or the month/year picker) is blocked and shows a
+   * toast instead. Defaults to true (no restriction). */
+  allowFutureMonths?: boolean;
 }
 
 const ANIM_DURATION = 320;
-const MONTH_SWIPE_DURATION = 220;
+const MONTH_SWIPE_DURATION = 260;
 // Vertical drag-up distance/speed that counts as "dismiss" rather than "snap back".
 const DISMISS_DISTANCE = 90;
 const DISMISS_VELOCITY = 0.7;
@@ -35,6 +40,7 @@ const MONTH_SWIPE_VELOCITY = 0.5;
 // Backdrop's opacity once fully open — fades in lockstep with the panel's
 // vertical position, same idea as the AddBillModal backdrop.
 const BACKDROP_MAX_OPACITY = 0.6;
+const FUTURE_BLOCKED_MESSAGE = "You can't select a future date";
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_LABELS = [
@@ -57,6 +63,13 @@ function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/** True if (year, month) falls strictly after today's real-world month. */
+function isMonthAfterToday(year: number, month: number, today: Date): boolean {
+  if (year > today.getFullYear()) return true;
+  if (year === today.getFullYear() && month > today.getMonth()) return true;
+  return false;
+}
+
 /** Builds a full 6-row (42-cell) grid for the given month, including the
  * leading/trailing days of adjacent months needed to fill complete weeks. */
 function buildMonthGrid(year: number, month: number): Date[] {
@@ -70,7 +83,58 @@ function buildMonthGrid(year: number, month: number): Date[] {
   });
 }
 
-export default function CalendarModal({ visible, onClose, selectedDate, onConfirm }: CalendarModalProps) {
+interface MonthGridViewProps {
+  dates: Date[];
+  viewMonth: number;
+  today: Date;
+  pendingDate: Date;
+  width: number;
+  onSelect: (date: Date) => void;
+}
+
+function MonthGridView({ dates, viewMonth, today, pendingDate, width, onSelect }: MonthGridViewProps) {
+  return (
+    <View style={[styles.grid, { width }]}>
+      {dates.map((date) => {
+        const inCurrentMonth = date.getMonth() === viewMonth;
+        const isToday = isSameDay(date, today);
+        const isSelected = isSameDay(date, pendingDate);
+        const isWeekend = date.getDay() === 0;
+
+        return (
+          <TouchableOpacity
+            key={date.toISOString()}
+            style={styles.cell}
+            activeOpacity={0.7}
+            onPress={() => onSelect(date)}
+          >
+            <View style={[styles.cellInner, isSelected && styles.cellSelected]}>
+              <Text
+                style={[
+                  styles.cellText,
+                  isWeekend && styles.weekendText,
+                  !inCurrentMonth && styles.cellTextMuted,
+                  isToday && !isSelected && styles.cellTextToday,
+                  isSelected && styles.cellTextSelected,
+                ]}
+              >
+                {date.getDate()}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+export default function CalendarModal({
+  visible,
+  onClose,
+  selectedDate,
+  onConfirm,
+  allowFutureMonths = true,
+}: CalendarModalProps) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [modalVisible, setModalVisible] = useState(false);
@@ -80,20 +144,29 @@ export default function CalendarModal({ visible, onClose, selectedDate, onConfir
   const panelHeight = windowHeight * 0.9;
 
   const translateY = useRef(new Animated.Value(-panelHeight)).current;
-  const gridTranslateX = useRef(new Animated.Value(0)).current;
+  // Offset from the pager's resting position (0 = current month centered,
+  // -windowWidth = next month fully revealed, +windowWidth = prev month fully revealed).
+  const pagerOffset = useRef(new Animated.Value(0)).current;
+  const isTransitioningRef = useRef(false);
 
-  const today = useMemo(() => new Date(), []);
+  const [today, setToday] = useState(() => new Date());
   const [viewYear, setViewYear] = useState(selectedDate.getFullYear());
   const [viewMonth, setViewMonth] = useState(selectedDate.getMonth());
   const [pendingDate, setPendingDate] = useState(selectedDate);
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
   const [pickerYear, setPickerYear] = useState(selectedDate.getFullYear());
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible) {
+      const now = new Date();
+      setToday(now);
       setPendingDate(selectedDate);
-      setViewYear(selectedDate.getFullYear());
-      setViewMonth(selectedDate.getMonth());
+      // Always reset to the current real-world month on open, regardless of
+      // what was previously selected/confirmed.
+      setViewYear(now.getFullYear());
+      setViewMonth(now.getMonth());
+      pagerOffset.setValue(0);
       setModalVisible(true);
     } else if (modalVisible) {
       animateClose(() => setModalVisible(false));
@@ -128,33 +201,46 @@ export default function CalendarModal({ visible, onClose, selectedDate, onConfir
     extrapolate: 'clamp',
   });
 
-  const goToMonth = (year: number, month: number) => {
-    const d = new Date(year, month, 1);
-    setViewYear(d.getFullYear());
-    setViewMonth(d.getMonth());
-  };
+  const showBlockedToast = () => setToastMessage(FUTURE_BLOCKED_MESSAGE);
 
-  const animateToMonth = (direction: 1 | -1) => {
-    Animated.timing(gridTranslateX, {
+  const prevDate = new Date(viewYear, viewMonth - 1, 1);
+  const nextDate = new Date(viewYear, viewMonth + 1, 1);
+  const prevGrid = useMemo(() => buildMonthGrid(prevDate.getFullYear(), prevDate.getMonth()), [viewYear, viewMonth]);
+  const currentGrid = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
+  const nextGrid = useMemo(() => buildMonthGrid(nextDate.getFullYear(), nextDate.getMonth()), [viewYear, viewMonth]);
+
+  const nextIsBlocked = !allowFutureMonths && isMonthAfterToday(nextDate.getFullYear(), nextDate.getMonth(), today);
+
+  const goToAdjacentMonth = (direction: 1 | -1) => {
+    if (isTransitioningRef.current) return;
+
+    if (direction === 1 && nextIsBlocked) {
+      showBlockedToast();
+      Animated.spring(pagerOffset, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+      return;
+    }
+
+    isTransitioningRef.current = true;
+    Animated.timing(pagerOffset, {
       toValue: -direction * windowWidth,
       duration: MONTH_SWIPE_DURATION,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
       const d = new Date(viewYear, viewMonth + direction, 1);
-      goToMonth(d.getFullYear(), d.getMonth());
-      gridTranslateX.setValue(direction * windowWidth);
-      Animated.timing(gridTranslateX, {
-        toValue: 0,
-        duration: MONTH_SWIPE_DURATION,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      setViewYear(d.getFullYear());
+      setViewMonth(d.getMonth());
+      pagerOffset.setValue(0);
+      isTransitioningRef.current = false;
     });
   };
 
+  const snapBack = () => {
+    Animated.spring(pagerOffset, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+  };
+
   // Vertical drag-to-dismiss, scoped to the whole panel via capture so it
-  // always wins over the grid's horizontal swipe for vertical-dominant drags.
+  // always wins over the pager's horizontal swipe for vertical-dominant drags.
   const verticalPanResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponderCapture: (_, gesture) =>
@@ -172,31 +258,58 @@ export default function CalendarModal({ visible, onClose, selectedDate, onConfir
     })
   ).current;
 
-  // Horizontal swipe-to-change-month, scoped to just the grid area. Only
+  // Horizontal swipe-to-change-month, scoped to just the pager viewport. Only
   // claims horizontal-dominant gestures, so it never fights the drag-to-dismiss above.
   const horizontalPanResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        !isTransitioningRef.current && Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
       onPanResponderMove: (_, gesture) => {
-        gridTranslateX.setValue(gesture.dx);
+        // Dragging left (negative dx) toward a blocked next month is allowed to
+        // rubber-band slightly, but doesn't reveal the (nonexistent-for-us) page.
+        if (gesture.dx < 0 && nextIsBlocked) {
+          pagerOffset.setValue(gesture.dx / 3);
+        } else {
+          pagerOffset.setValue(gesture.dx);
+        }
       },
       onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx < -MONTH_SWIPE_DISTANCE || gesture.vx < -MONTH_SWIPE_VELOCITY) {
-          animateToMonth(1);
-        } else if (gesture.dx > MONTH_SWIPE_DISTANCE || gesture.vx > MONTH_SWIPE_VELOCITY) {
-          animateToMonth(-1);
+        const draggedNext = gesture.dx < -MONTH_SWIPE_DISTANCE || gesture.vx < -MONTH_SWIPE_VELOCITY;
+        const draggedPrev = gesture.dx > MONTH_SWIPE_DISTANCE || gesture.vx > MONTH_SWIPE_VELOCITY;
+
+        if (draggedNext) {
+          goToAdjacentMonth(1);
+        } else if (draggedPrev) {
+          goToAdjacentMonth(-1);
         } else {
-          Animated.spring(gridTranslateX, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
+          snapBack();
         }
       },
     })
   ).current;
 
-  const grid = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
-
   const handleOpenMonthPicker = () => {
     setPickerYear(viewYear);
     setMonthPickerVisible(true);
+  };
+
+  const handlePickMonth = (year: number, month: number) => {
+    if (!allowFutureMonths && isMonthAfterToday(year, month, today)) {
+      showBlockedToast();
+      return;
+    }
+    setViewYear(year);
+    setViewMonth(month);
+    pagerOffset.setValue(0);
+    setMonthPickerVisible(false);
+  };
+
+  const handlePickerYearNext = () => {
+    if (!allowFutureMonths && pickerYear >= today.getFullYear()) {
+      showBlockedToast();
+      return;
+    }
+    setPickerYear((y) => y + 1);
   };
 
   const handleConfirm = () => {
@@ -244,40 +357,40 @@ export default function CalendarModal({ visible, onClose, selectedDate, onConfir
               ))}
             </View>
 
-            <Animated.View
-              style={[styles.grid, { transform: [{ translateX: gridTranslateX }] }]}
-              {...horizontalPanResponder.panHandlers}
-            >
-              {grid.map((date) => {
-                const inCurrentMonth = date.getMonth() === viewMonth;
-                const isToday = isSameDay(date, today);
-                const isSelected = isSameDay(date, pendingDate);
-                const isWeekend = date.getDay() === 0;
-
-                return (
-                  <TouchableOpacity
-                    key={date.toISOString()}
-                    style={styles.cell}
-                    activeOpacity={0.7}
-                    onPress={() => setPendingDate(date)}
-                  >
-                    <View style={[styles.cellInner, isSelected && styles.cellSelected]}>
-                      <Text
-                        style={[
-                          styles.cellText,
-                          isWeekend && styles.weekendText,
-                          !inCurrentMonth && styles.cellTextMuted,
-                          isToday && !isSelected && styles.cellTextToday,
-                          isSelected && styles.cellTextSelected,
-                        ]}
-                      >
-                        {date.getDate()}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </Animated.View>
+            {/* Fixed-width clipping viewport; the wider 3-page row slides inside it. */}
+            <View style={styles.pagerViewport} {...horizontalPanResponder.panHandlers}>
+              <Animated.View
+                style={[
+                  styles.pagerRow,
+                  { width: windowWidth * 3, transform: [{ translateX: Animated.add(-windowWidth, pagerOffset) }] },
+                ]}
+              >
+                <MonthGridView
+                  dates={prevGrid}
+                  viewMonth={prevDate.getMonth()}
+                  today={today}
+                  pendingDate={pendingDate}
+                  width={windowWidth}
+                  onSelect={setPendingDate}
+                />
+                <MonthGridView
+                  dates={currentGrid}
+                  viewMonth={viewMonth}
+                  today={today}
+                  pendingDate={pendingDate}
+                  width={windowWidth}
+                  onSelect={setPendingDate}
+                />
+                <MonthGridView
+                  dates={nextGrid}
+                  viewMonth={nextDate.getMonth()}
+                  today={today}
+                  pendingDate={pendingDate}
+                  width={windowWidth}
+                  onSelect={setPendingDate}
+                />
+              </Animated.View>
+            </View>
           </View>
 
           <View style={styles.slideHintRow}>
@@ -290,6 +403,8 @@ export default function CalendarModal({ visible, onClose, selectedDate, onConfir
             <Text style={styles.confirmButtonText}>Confirm date</Text>
           </TouchableOpacity>
         </Animated.View>
+
+        <Toast message={toastMessage ?? ''} visible={!!toastMessage} onHide={() => setToastMessage(null)} />
       </View>
 
       <HalfModal
@@ -302,7 +417,7 @@ export default function CalendarModal({ visible, onClose, selectedDate, onConfir
             <Ionicons name="chevron-back" size={rf(18)} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.yearStepperLabel}>{pickerYear}</Text>
-          <TouchableOpacity onPress={() => setPickerYear((y) => y + 1)} style={styles.yearStepButton} activeOpacity={0.7}>
+          <TouchableOpacity onPress={handlePickerYearNext} style={styles.yearStepButton} activeOpacity={0.7}>
             <Ionicons name="chevron-forward" size={rf(18)} color={colors.textPrimary} />
           </TouchableOpacity>
         </View>
@@ -310,17 +425,23 @@ export default function CalendarModal({ visible, onClose, selectedDate, onConfir
         <View style={styles.monthGrid}>
           {MONTH_SHORT_LABELS.map((label, index) => {
             const isActive = pickerYear === viewYear && index === viewMonth;
+            const isBlocked = !allowFutureMonths && isMonthAfterToday(pickerYear, index, today);
             return (
               <TouchableOpacity
                 key={label}
-                style={[styles.monthChip, isActive && styles.monthChipActive]}
+                style={[styles.monthChip, isActive && styles.monthChipActive, isBlocked && styles.monthChipBlocked]}
                 activeOpacity={0.7}
-                onPress={() => {
-                  goToMonth(pickerYear, index);
-                  setMonthPickerVisible(false);
-                }}
+                onPress={() => handlePickMonth(pickerYear, index)}
               >
-                <Text style={[styles.monthChipText, isActive && styles.monthChipTextActive]}>{label}</Text>
+                <Text
+                  style={[
+                    styles.monthChipText,
+                    isActive && styles.monthChipTextActive,
+                    isBlocked && styles.monthChipTextBlocked,
+                  ]}
+                >
+                  {label}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -412,9 +533,18 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
   },
+  pagerViewport: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  pagerRow: {
+    flex: 1,
+    flexDirection: 'row',
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignContent: 'flex-start',
   },
   cell: {
     width: `${100 / 7}%`,
@@ -514,6 +644,9 @@ const styles = StyleSheet.create({
   monthChipActive: {
     backgroundColor: colors.accent,
   },
+  monthChipBlocked: {
+    opacity: 0.4,
+  },
   monthChipText: {
     fontSize: rf(13),
     fontWeight: '700',
@@ -521,5 +654,8 @@ const styles = StyleSheet.create({
   },
   monthChipTextActive: {
     color: colors.onAccent,
+  },
+  monthChipTextBlocked: {
+    color: colors.textMuted,
   },
 });
