@@ -18,7 +18,7 @@ import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-ca
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { rf, moderateScale } from '../utils/responsive';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatReceiptTimestamp } from '../utils/format';
 import { user, accounts } from '../constants/mockData';
 import HalfModal from './Modal';
 
@@ -29,7 +29,7 @@ interface PayScanModalProps {
 
 type PayTab = 'scan' | 'venmo' | 'show';
 type ScanState = 'idle' | 'verifying' | 'confirming';
-type PaymentState = 'form' | 'processing' | 'success';
+type PaymentState = 'form' | 'reviewing' | 'processing' | 'success';
 
 const ANIM_DURATION = 320;
 const DISMISS_DISTANCE = 100;
@@ -44,19 +44,30 @@ const TABS: { key: PayTab; label: string }[] = [
     { key: 'show', label: 'Show to pay' },
 ];
 
+//Mock fee rule — larger transfers incur a flat charge, smaller ones are free.
+// Swap this out for a real fee lookup once there's a backend to ask.
+function calculateTransactionCharge(amount: number): number {
+    return amount > 50000 ? (amount * 0.02) : 0;
+}
+
+function generateTransactionId(): string {
+    return `TRN-${Math.floor(10000000 + Math.random() * 89999999)}`;
+}
+
 export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
     const { height: windowHeight } = useWindowDimensions();
     const [modalVisible, setModalVisible] = useState(false);
     const [activeTab, setActiveTab] = useState<PayTab>('scan');
     const translateY = useRef(new Animated.Value(windowHeight)).current;
-
+    const [transactionId, setTransactionId] = useState('');
     const [permission, requestPermission] = useCameraPermissions();
     const hasScannedRef = useRef(false);
-
+    const [narration, setNarration] = useState('');
     const [scanState, setScanState] = useState<ScanState>('idle');
     const [scannedData, setScannedData] = useState<string | null>(null);
     const [paymentState, setPaymentState] = useState<PaymentState>('form');
     const [amount, setAmount] = useState(0);
+    const [transactionDate, setTransactionDate] = useState<Date | null>(null);
     const [selectedAccountId, setSelectedAccountId] = useState(accounts[0].id);
 
     const successScale = useRef(new Animated.Value(0)).current;
@@ -78,6 +89,9 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
         setScannedData(null);
         setPaymentState('form');
         setAmount(0);
+        setNarration('');
+        setTransactionId('');
+        setTransactionDate(null);
         setSelectedAccountId(accounts[0].id);
         successScale.setValue(0);
     };
@@ -140,7 +154,7 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
         setAmount(digitsOnly ? parseInt(digitsOnly, 10) : 0);
     };
 
-    const handleConfirmPayment = () => {
+    const handleFinalConfirm = () => {
         setPaymentState('processing');
         setTimeout(() => {
             setPaymentState('success');
@@ -153,6 +167,16 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
         }, PROCESSING_DURATION);
     };
 
+    const handleReviewPayment = () => {
+        setTransactionId(generateTransactionId());
+        setTransactionDate(new Date());
+        setPaymentState('reviewing');
+    };
+
+    const handleEditReview = () => {
+        setPaymentState('form');
+    };
+
     const handleCancelConfirm = () => {
         setScanState('idle');
         hasScannedRef.current = false;
@@ -161,6 +185,8 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
     };
 
     const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? accounts[0];
+    const transactionCharge = calculateTransactionCharge(amount);
+    const canReview = amount > 0 && narration.trim().length > 0;
 
     return (
         <Modal
@@ -279,9 +305,15 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
 
             <HalfModal
                 visible={scanState === 'confirming'}
-                onClose={paymentState === 'form' ? handleCancelConfirm : () => { }}
-                title={paymentState === 'success' ? undefined : 'Confirm payment'}
-                maxHeightPercent={0.8}
+                onClose={paymentState === 'form' || paymentState === 'reviewing' ? handleCancelConfirm : () => { }}
+                title={
+                    paymentState === 'form'
+                        ? 'Confirm payment'
+                        : paymentState === 'reviewing'
+                            ? 'Review transaction'
+                            : undefined
+                }
+                maxHeightPercent={0.85}
             >
                 {paymentState === 'form' && (
                     <View>
@@ -303,6 +335,23 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                                 autoFocus
                             />
                         </View>
+
+                        <View style={[styles.narrationLabelRow, { marginTop: moderateScale(20) }]}>
+                            <Text style={styles.fieldLabel}>
+                                Narration <Text style={styles.required}>*</Text>
+                            </Text>
+                            <Text style={[styles.charCounter, narration.length >= 40 && styles.charCounterWarning]}>
+                                {narration.length}/50
+                            </Text>
+                        </View>
+                        <TextInput
+                            style={styles.narrationInput}
+                            value={narration}
+                            onChangeText={(text) => setNarration(text.slice(0, 50))}
+                            placeholder="What's this payment for?"
+                            placeholderTextColor={colors.textMuted}
+                            maxLength={50}
+                        />
 
                         <Text style={[styles.fieldLabel, { marginTop: moderateScale(20) }]}>Pay from</Text>
                         {accounts.map((account) => {
@@ -332,15 +381,73 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                         })}
 
                         <TouchableOpacity
-                            style={[styles.confirmButton, amount <= 0 && styles.confirmButtonDisabled]}
+                            style={[styles.confirmButton, !canReview && styles.confirmButtonDisabled]}
                             activeOpacity={0.9}
-                            disabled={amount <= 0}
-                            onPress={handleConfirmPayment}
+                            disabled={!canReview}
+                            onPress={handleReviewPayment}
                         >
                             <Text style={styles.confirmButtonText}>
-                                {amount > 0 ? `Pay UGX ${formatCurrency(amount, false)}` : 'Enter an amount'}
+                                {amount <= 0
+                                    ? 'Enter an amount'
+                                    : narration.trim().length === 0
+                                        ? 'Add a narration'
+                                        : `Review UGX ${formatCurrency(amount, false)} payment`}
                             </Text>
                         </TouchableOpacity>
+                    </View>
+                )}
+
+                {paymentState === 'reviewing' && (
+                    <View>
+                        <View style={styles.receiptCard}>
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Transaction ID</Text>
+                                <Text style={styles.receiptValue}>{transactionId}</Text>
+                            </View>
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Date</Text>
+                                <Text style={styles.receiptValue}>
+                                    {transactionDate ? formatReceiptTimestamp(transactionDate) : ''}
+                                </Text>
+                            </View>
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Paying from</Text>
+                                <Text style={styles.receiptValue}>{selectedAccount.name}</Text>
+                            </View>
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Narration</Text>
+                                <Text style={styles.receiptValue} numberOfLines={2}>
+                                    {narration}
+                                </Text>
+                            </View>
+
+                            <View style={styles.receiptDivider} />
+
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Amount</Text>
+                                <Text style={styles.receiptValue}>UGX {formatCurrency(amount, false)}</Text>
+                            </View>
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Transaction charges</Text>
+                                <Text style={styles.receiptValue}>UGX {formatCurrency(transactionCharge, false)}</Text>
+                            </View>
+
+                            <View style={styles.receiptDivider} />
+
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptTotalLabel}>Total</Text>
+                                <Text style={styles.receiptTotalValue}>UGX {formatCurrency(amount + transactionCharge, false)}</Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.reviewButtonRow}>
+                            <TouchableOpacity style={styles.editButton} activeOpacity={0.8} onPress={handleEditReview}>
+                                <Text style={styles.editButtonText}>Edit</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.confirmPayButton} activeOpacity={0.9} onPress={handleFinalConfirm}>
+                                <Text style={styles.confirmButtonText}>Confirm & pay</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 )}
 
@@ -359,6 +466,7 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                         <Text style={styles.statusText}>
                             UGX {formatCurrency(amount, false)} sent from {selectedAccount.name}
                         </Text>
+                        {narration ? <Text style={styles.statusSubtext}>{narration}</Text> : null}
                     </View>
                 )}
             </HalfModal>
@@ -682,6 +790,32 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: colors.onAccent,
     },
+    required: {
+        color: colors.danger,
+    },
+    narrationLabelRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: moderateScale(10),
+    },
+    charCounter: {
+        fontSize: rf(11),
+        fontWeight: '600',
+        color: colors.textMuted,
+    },
+    charCounterWarning: {
+        color: colors.warning,
+    },
+    narrationInput: {
+        backgroundColor: colors.surfaceAlt,
+        borderRadius: moderateScale(14),
+        paddingHorizontal: moderateScale(14),
+        paddingVertical: moderateScale(12),
+        fontSize: rf(14),
+        fontWeight: '500',
+        color: colors.textPrimary,
+    },
     statusBlock: {
         alignItems: 'center',
         paddingVertical: moderateScale(32),
@@ -701,5 +835,78 @@ const styles = StyleSheet.create({
         backgroundColor: colors.success,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+
+    // Receipt card and review screen styles
+    receiptCard: {
+        backgroundColor: colors.surfaceAlt,
+        borderRadius: moderateScale(16),
+        padding: moderateScale(16),
+        marginBottom: moderateScale(18),
+    },
+    receiptRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        paddingVertical: moderateScale(8),
+    },
+    receiptLabel: {
+        fontSize: rf(12),
+        color: colors.textMuted,
+        flex: 1,
+    },
+    receiptValue: {
+        fontSize: rf(13),
+        fontWeight: '700',
+        color: colors.textPrimary,
+        flex: 1.4,
+        textAlign: 'right',
+    },
+    receiptDivider: {
+        height: 1,
+        backgroundColor: colors.border,
+        marginVertical: moderateScale(6),
+    },
+    receiptTotalLabel: {
+        fontSize: rf(14),
+        fontWeight: '700',
+        color: colors.textPrimary,
+    },
+    receiptTotalValue: {
+        fontSize: rf(16),
+        fontWeight: '800',
+        color: colors.accent,
+    },
+    reviewButtonRow: {
+        flexDirection: 'row',
+        gap: moderateScale(10),
+    },
+    editButton: {
+        flex: 1,
+        height: moderateScale(52),
+        borderRadius: moderateScale(28),
+        borderWidth: 1.5,
+        borderColor: colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    editButtonText: {
+        fontSize: rf(15),
+        fontWeight: '700',
+        color: colors.textPrimary,
+    },
+    confirmPayButton: {
+        flex: 1.4,
+        height: moderateScale(52),
+        borderRadius: moderateScale(28),
+        backgroundColor: colors.accent,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    statusSubtext: {
+        marginTop: moderateScale(6),
+        fontSize: rf(12),
+        color: colors.textMuted,
+        textAlign: 'center',
     },
 });
