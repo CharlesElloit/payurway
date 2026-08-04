@@ -37,6 +37,8 @@ const DISMISS_VELOCITY = 0.8;
 const VERIFY_DURATION = 1500;
 const PROCESSING_DURATION = 1100;
 const SUCCESS_DISPLAY_DURATION = 1200;
+const MAX_DAILY_TRANSACTION_AMOUNT = 1000000;
+const AMOUNT_CHIPS = [5000, 10000, 20000, 50000];
 
 const TABS: { key: PayTab; label: string }[] = [
     { key: 'scan', label: 'Scan code' },
@@ -52,6 +54,14 @@ function calculateTransactionCharge(amount: number): number {
 
 function generateTransactionId(): string {
     return `TRN-${Math.floor(10000000 + Math.random() * 89999999)}`;
+}
+
+// Text-based stand-ins for provider logos — no real brand assets bundled here.
+function getProviderBadge(provider: 'MTN' | 'Airtel'): { bg: string; textColor: string; label: string } {
+    if (provider === 'Airtel') {
+        return { bg: '#ED1C24', textColor: '#FFFFFF', label: 'airtel' };
+    }
+    return { bg: '#FFCC08', textColor: '#0A0A0A', label: 'MTN' };
 }
 
 export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
@@ -192,7 +202,7 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
         <Modal
             visible={modalVisible}
             transparent
-            animationType="none"
+            animationType="fade"
             statusBarTranslucent
             onRequestClose={onClose}
             onShow={animateOpen}
@@ -313,18 +323,13 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                             ? 'Review transaction'
                             : undefined
                 }
-                maxHeightPercent={0.85}
+                maxHeightPercent={0.95}
             >
                 {paymentState === 'form' && (
                     <View>
-                        {/* <View style={styles.scannedRow}>
-                            <Ionicons name="qr-code-outline" size={rf(16)} color={colors.textMuted} />
-                            <Text style={styles.scannedText} numberOfLines={1}>
-                                {scannedData}
-                            </Text>
-                        </View> */}
-
-                        <Text style={styles.fieldLabel}>Amount</Text>
+                        <Text style={styles.fieldLabel}>
+                            Amount <Text style={styles.required}>*</Text>
+                        </Text>
                         <View style={styles.amountRow}>
                             <Text style={styles.amountCurrency}>UGX</Text>
                             <TextInput
@@ -334,6 +339,29 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                                 keyboardType="number-pad"
                                 autoFocus
                             />
+                            {amount > 0 && (
+                                <TouchableOpacity onPress={() => setAmount(0)} activeOpacity={0.7}>
+                                    <Ionicons name="close-circle" size={rf(20)} color={colors.textMuted} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                        <Text style={styles.limitText}>
+                            Maximum transaction amount is{' '}
+                            <Text style={styles.limitAmount}>UGX{formatCurrency(MAX_DAILY_TRANSACTION_AMOUNT)}</Text> per day.
+                        </Text>
+
+                        <Text style={styles.smallHelperText}>Select a figure below or enter the figure manually.</Text>
+                        <View style={styles.chipRow}>
+                            {AMOUNT_CHIPS.map((chip) => (
+                                <TouchableOpacity
+                                    key={chip}
+                                    style={styles.chip}
+                                    activeOpacity={0.7}
+                                    onPress={() => setAmount((prev) => prev + chip)}
+                                >
+                                    <Text style={styles.chipText}>+{formatCurrency(chip, false)}</Text>
+                                </TouchableOpacity>
+                            ))}
                         </View>
 
                         <View style={[styles.narrationLabelRow, { marginTop: moderateScale(20) }]}>
@@ -348,51 +376,58 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                             style={styles.narrationInput}
                             value={narration}
                             onChangeText={(text) => setNarration(text.slice(0, 50))}
-                            placeholder="What's this payment for?"
-                            placeholderTextColor={colors.textMuted}
+                            placeholder="Narration"
+                            placeholderTextColor={colors.textSecondary}
                             maxLength={50}
                         />
+                        <Text style={styles.smallHelperText}>Describe what the money is for...</Text>
 
-                        <Text style={[styles.fieldLabel, { marginTop: moderateScale(20) }]}>Pay from</Text>
+                        <View style={[styles.payFromHeaderRow, { marginTop: moderateScale(20) }]}>
+                            <Text style={styles.payFromTitle}>Pay from</Text>
+                            <TouchableOpacity activeOpacity={0.7} onPress={() => { }}>
+                                <Text style={styles.addNewLink}>Add new</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={styles.smallHelperText}>
+                            Select where we should get the money. Default to the main account.
+                        </Text>
+
                         {accounts.map((account) => {
                             const selected = account.id === selectedAccountId;
+                            const badge = getProviderBadge(account.provider);
                             return (
                                 <TouchableOpacity
                                     key={account.id}
-                                    style={[styles.accountRow, selected && styles.accountRowSelected]}
+                                    style={[styles.accountCard, selected && styles.accountCardSelected]}
                                     activeOpacity={0.7}
                                     onPress={() => setSelectedAccountId(account.id)}
                                 >
-                                    <View style={styles.accountLeft}>
-                                        <Ionicons
-                                            name={selected ? 'radio-button-on' : 'radio-button-off'}
-                                            size={rf(20)}
-                                            color={selected ? colors.accent : colors.textMuted}
-                                            style={{ marginRight: moderateScale(10) }}
-                                        />
-                                        <View>
-                                            <Text style={styles.accountName}>{account.name}</Text>
-                                            <Text style={styles.accountNumber}>{account.number}</Text>
-                                        </View>
+                                    <View style={[styles.providerBadge, { backgroundColor: badge.bg }]}>
+                                        <Text style={[styles.providerBadgeText, { color: badge.textColor }]}>{badge.label}</Text>
                                     </View>
-                                    <Text style={styles.accountBalance}>UGX {formatCurrency(account.balance, false)}</Text>
+                                    <View style={styles.accountInfo}>
+                                        <Text style={styles.accountName}>{account.name}</Text>
+                                        <Text style={styles.accountNumber}>{account.number}</Text>
+                                    </View>
+                                    <View style={styles.accountBalanceBlock}>
+                                        <Text style={styles.balanceLabel}>Balance</Text>
+                                        <Text style={styles.accountBalance}>UGX {formatCurrency(account.balance)}</Text>
+                                    </View>
                                 </TouchableOpacity>
                             );
                         })}
 
                         <TouchableOpacity
-                            style={[styles.confirmButton, !canReview && styles.confirmButtonDisabled]}
+                            style={[styles.saveButton, !canReview && styles.confirmButtonDisabled]}
                             activeOpacity={0.9}
                             disabled={!canReview}
                             onPress={handleReviewPayment}
                         >
-                            <Text style={styles.confirmButtonText}>
-                                {amount <= 0
-                                    ? 'Enter an amount'
-                                    : narration.trim().length === 0
-                                        ? 'Add a narration'
-                                        : `Review UGX ${formatCurrency(amount, false)} payment`}
-                            </Text>
+                            <Text style={styles.saveButtonText}>Save</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.cancelButton} activeOpacity={0.8} onPress={handleCancelConfirm}>
+                            <Text style={styles.cancelButtonText}>Cancel</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -477,7 +512,7 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
 const styles = StyleSheet.create({
     root: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: colors.surface,
     },
     safeArea: {
         flex: 1,
@@ -499,7 +534,7 @@ const styles = StyleSheet.create({
     segmentRow: {
         flexDirection: 'row',
         backgroundColor: colors.surface,
-        borderRadius: moderateScale(24),
+        borderRadius: moderateScale(10),
         padding: moderateScale(4),
         marginHorizontal: moderateScale(16),
         marginTop: moderateScale(20),
@@ -722,8 +757,8 @@ const styles = StyleSheet.create({
     amountRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: colors.surfaceAlt,
-        borderRadius: moderateScale(14),
+        backgroundColor: colors.surface,
+        borderRadius: moderateScale(5),
         paddingHorizontal: moderateScale(14),
         paddingVertical: moderateScale(12),
     },
@@ -908,5 +943,115 @@ const styles = StyleSheet.create({
         fontSize: rf(12),
         color: colors.textMuted,
         textAlign: 'center',
+    },
+    // new styles
+    smallHelperText: {
+        fontSize: rf(12),
+        color: colors.textMuted,
+        marginTop: moderateScale(8),
+    },
+    limitText: {
+        fontSize: rf(12),
+        color: colors.textMuted,
+        marginTop: moderateScale(8),
+    },
+    limitAmount: {
+        color: colors.accent,
+        fontWeight: '700',
+    },
+    chipRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: moderateScale(12),
+    },
+    chip: {
+        flexGrow: 1,
+        flexBasis: 0,
+        marginRight: moderateScale(8),
+        paddingVertical: moderateScale(10),
+        borderRadius: moderateScale(12),
+        backgroundColor: colors.surfaceAlt,
+        alignItems: 'center',
+    },
+    chipText: {
+        fontSize: rf(12),
+        fontWeight: '700',
+        color: colors.textPrimary,
+    },
+    payFromHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    payFromTitle: {
+        fontSize: rf(18),
+        fontWeight: '800',
+        color: colors.textPrimary,
+    },
+    addNewLink: {
+        fontSize: rf(13),
+        fontWeight: '700',
+        color: colors.accent,
+    },
+    accountCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderRadius: moderateScale(14),
+        borderWidth: 1.5,
+        borderColor: colors.border,
+        paddingHorizontal: moderateScale(14),
+        paddingVertical: moderateScale(12),
+        marginTop: moderateScale(12),
+    },
+    accountCardSelected: {
+        borderColor: colors.accent,
+    },
+    providerBadge: {
+        width: moderateScale(38),
+        height: moderateScale(38),
+        borderRadius: moderateScale(19),
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: moderateScale(12),
+    },
+    providerBadgeText: {
+        fontSize: rf(10),
+        fontWeight: '800',
+    },
+    accountInfo: {
+        flex: 1,
+    },
+    accountBalanceBlock: {
+        alignItems: 'flex-end',
+    },
+    balanceLabel: {
+        fontSize: rf(11),
+        color: colors.textMuted,
+    },
+    saveButton: {
+        marginTop: moderateScale(24),
+        backgroundColor: colors.accent,
+        borderRadius: moderateScale(28),
+        height: moderateScale(52),
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    saveButtonText: {
+        fontSize: rf(15),
+        fontWeight: '700',
+        color: colors.onAccent,
+    },
+    cancelButton: {
+        marginTop: moderateScale(10),
+        backgroundColor: colors.surface,
+        borderRadius: moderateScale(28),
+        height: moderateScale(52),
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    cancelButtonText: {
+        fontSize: rf(15),
+        fontWeight: '700',
+        color: colors.textMuted,
     },
 });

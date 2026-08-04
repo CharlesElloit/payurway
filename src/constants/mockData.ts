@@ -165,12 +165,11 @@ export interface Account {
   name: string;
   number: string;
   balance: number;
+  provider: 'MTN' | 'Airtel';
 }
 
-// First entry ("main") mirrors the wallet balance shown on the home screen,
-// and is the default pre-selected account in the payment confirmation flow.
 export const accounts: Account[] = [
-  { id: 'main', name: 'Main Account', number: '1002********143817', balance: 20000 },
-  { id: 'savings', name: 'Savings', number: '1002********298213', balance: 150000 },
-  { id: 'business', name: 'Business', number: '1002********881145', balance: 82000 },
+  { id: 'mtn-main', name: 'MTN Wallet', number: '1002********143817', balance: 200000, provider: 'MTN' },
+  { id: 'airtel-main', name: 'Airtel Wallet', number: '1002********143817', balance: 450000, provider: 'Airtel' },
+  { id: 'mtn-secondary', name: 'MTN Wallet', number: '1002********143817', balance: 200000, provider: 'MTN' },
 ];
