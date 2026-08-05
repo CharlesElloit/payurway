@@ -18,7 +18,7 @@ import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-ca
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { rf, moderateScale } from '../utils/responsive';
-import { formatCurrency, formatReceiptTimestamp } from '../utils/format';
+import { formatCurrency, formatReceiptTimestamp, numberToWords } from '../utils/format';
 import { user, accounts } from '../constants/mockData';
 import HalfModal from './Modal';
 
@@ -64,6 +64,20 @@ function getProviderBadge(provider: 'MTN' | 'Airtel'): { bg: string; textColor: 
     return { bg: '#FFCC08', textColor: '#0A0A0A', label: 'MTN' };
 }
 
+function generateReceiptNumber(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const sequence = String(Math.floor(100000 + Math.random() * 899999));
+    return `${y}${m}${d}${sequence}`;
+}
+
+// Mock — no real tax rules to apply yet. Kept separate from the transaction
+// charge above for clarity/extensibility once there's something to compute.
+function calculateTransactionTax(_amount: number): number {
+    return 0;
+}
+
 export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
     const { height: windowHeight } = useWindowDimensions();
     const [modalVisible, setModalVisible] = useState(false);
@@ -78,9 +92,12 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
     const [paymentState, setPaymentState] = useState<PaymentState>('form');
     const [amount, setAmount] = useState(0);
     const [transactionDate, setTransactionDate] = useState<Date | null>(null);
+    const [receiptNumber, setReceiptNumber] = useState('');
     const [selectedAccountId, setSelectedAccountId] = useState(accounts[0].id);
 
     const successScale = useRef(new Animated.Value(0)).current;
+    const reviewOpacity = useRef(new Animated.Value(0)).current;
+    const reviewTranslateY = useRef(new Animated.Value(24)).current;
 
     useEffect(() => {
         if (visible) {
@@ -92,6 +109,30 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible]);
+
+    // Entrance animation for the reviewing section — fires whenever paymentState
+    // becomes 'reviewing', regardless of which handler got it there.
+    useEffect(() => {
+        if (paymentState === 'reviewing') {
+            reviewOpacity.setValue(0);
+            reviewTranslateY.setValue(24);
+            Animated.parallel([
+                Animated.timing(reviewOpacity, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+                Animated.timing(reviewTranslateY, { toValue: 0, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+            ]).start();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [paymentState]);
+
+    // Plays the reviewing section's exit animation, then hands off to whatever
+    // should happen next — used by both "Edit" (back to form) and "Confirm &
+    // Pay" (on to processing), so the content swap never happens as a hard cut.
+    const animateReviewExit = (onDone: () => void) => {
+        Animated.parallel([
+            Animated.timing(reviewOpacity, { toValue: 0, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+            Animated.timing(reviewTranslateY, { toValue: -16, duration: 220, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+        ]).start(onDone);
+    };
 
     const resetScanFlow = () => {
         hasScannedRef.current = false;
@@ -165,26 +206,30 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
     };
 
     const handleFinalConfirm = () => {
-        setPaymentState('processing');
-        setTimeout(() => {
-            setPaymentState('success');
-            Animated.spring(successScale, { toValue: 1, useNativeDriver: true, bounciness: 10 }).start();
+        animateReviewExit(() => {
+            setPaymentState('processing');
             setTimeout(() => {
-                // Return the person to Home once the success state has been visible
-                // long enough to register, rather than leaving them to dismiss it manually.
-                onClose();
-            }, SUCCESS_DISPLAY_DURATION);
-        }, PROCESSING_DURATION);
+                setPaymentState('success');
+                Animated.spring(successScale, { toValue: 1, useNativeDriver: true, bounciness: 10 }).start();
+                setTimeout(() => {
+                    // Return the person to Home once the success state has been visible
+                    // long enough to register, rather than leaving them to dismiss it manually.
+                    onClose();
+                }, SUCCESS_DISPLAY_DURATION);
+            }, PROCESSING_DURATION);
+        });
     };
 
     const handleReviewPayment = () => {
+        const now = new Date();
         setTransactionId(generateTransactionId());
-        setTransactionDate(new Date());
+        setTransactionDate(now);
+        setReceiptNumber(generateReceiptNumber(now));
         setPaymentState('reviewing');
     };
 
     const handleEditReview = () => {
-        setPaymentState('form');
+        animateReviewExit(() => setPaymentState('form'));
     };
 
     const handleCancelConfirm = () => {
@@ -196,6 +241,7 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
 
     const selectedAccount = accounts.find((a) => a.id === selectedAccountId) ?? accounts[0];
     const transactionCharge = calculateTransactionCharge(amount);
+    const transactionTax = calculateTransactionTax(amount);
     const canReview = amount > 0 && narration.trim().length > 0;
 
     return (
@@ -345,12 +391,8 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                                 </TouchableOpacity>
                             )}
                         </View>
-                        <Text style={styles.limitText}>
-                            Maximum transaction amount is{' '}
-                            <Text style={styles.limitAmount}>UGX{formatCurrency(MAX_DAILY_TRANSACTION_AMOUNT)}</Text> per day.
-                        </Text>
 
-                        <Text style={styles.smallHelperText}>Select a figure below or enter the figure manually.</Text>
+                        {/* <Text style={styles.smallHelperText}>Select a figure below or enter the figure manually.</Text>
                         <View style={styles.chipRow}>
                             {AMOUNT_CHIPS.map((chip) => (
                                 <TouchableOpacity
@@ -362,16 +404,9 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                                     <Text style={styles.chipText}>+{formatCurrency(chip, false)}</Text>
                                 </TouchableOpacity>
                             ))}
-                        </View>
+                        </View> */}
 
-                        <View style={[styles.narrationLabelRow, { marginTop: moderateScale(20) }]}>
-                            <Text style={styles.fieldLabel}>
-                                Narration <Text style={styles.required}>*</Text>
-                            </Text>
-                            <Text style={[styles.charCounter, narration.length >= 40 && styles.charCounterWarning]}>
-                                {narration.length}/50
-                            </Text>
-                        </View>
+
                         <TextInput
                             style={styles.narrationInput}
                             value={narration}
@@ -380,7 +415,19 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                             placeholderTextColor={colors.textSecondary}
                             maxLength={50}
                         />
-                        <Text style={styles.smallHelperText}>Describe what the money is for...</Text>
+                        {/* <Text style={styles.smallHelperText}>Describe what the money is for...</Text> */}
+                        <View style={[styles.narrationLabelRow, { marginTop: moderateScale(20) }]}>
+                            <Text style={styles.limitText}>
+                                Maximum transaction amount is{' '}
+                                <Text style={styles.limitAmount}>UGX{formatCurrency(MAX_DAILY_TRANSACTION_AMOUNT)}</Text> per day.
+                            </Text>
+                            {/* <Text style={styles.fieldLabel}>
+                                Narration <Text style={styles.required}>*</Text>
+                            </Text> */}
+                            <Text style={[styles.charCounter, narration.length >= 40 && styles.charCounterWarning]}>
+                                {narration.length}/50
+                            </Text>
+                        </View>
 
                         <View style={[styles.payFromHeaderRow, { marginTop: moderateScale(20) }]}>
                             <Text style={styles.payFromTitle}>Pay from</Text>
@@ -758,9 +805,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: colors.surface,
-        borderRadius: moderateScale(5),
+        borderTopLeftRadius: moderateScale(5),
+        borderTopRightRadius: moderateScale(5),
         paddingHorizontal: moderateScale(14),
         paddingVertical: moderateScale(12),
+        borderBottomWidth: 1.5,
+        borderBottomColor: colors.border,
     },
     amountCurrency: {
         fontSize: rf(15),
@@ -832,7 +882,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: moderateScale(10),
+        // marginBottom: moderateScale(10),
     },
     charCounter: {
         fontSize: rf(11),
@@ -843,8 +893,9 @@ const styles = StyleSheet.create({
         color: colors.warning,
     },
     narrationInput: {
-        backgroundColor: colors.surfaceAlt,
-        borderRadius: moderateScale(14),
+        backgroundColor: colors.surface,
+        borderBottomLeftRadius: moderateScale(5),
+        borderBottomRightRadius: moderateScale(5),
         paddingHorizontal: moderateScale(14),
         paddingVertical: moderateScale(12),
         fontSize: rf(14),

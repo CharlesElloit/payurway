@@ -52,3 +52,46 @@ export function formatReceiptTimestamp(date: Date): string {
   const ss = String(date.getSeconds()).padStart(2, '0');
   return `${DAY_NAMES[date.getDay()]} ${day}${ordinalSuffix(day)} ${SHORT_MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}, ${hours12}:${mm}:${ss} ${ampm}`;
 }
+
+const ONES_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const TENS_WORDS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+function threeDigitsToWords(n: number): string {
+  let result = '';
+  if (n >= 100) {
+    result += `${ONES_WORDS[Math.floor(n / 100)]} Hundred`;
+    n %= 100;
+    if (n > 0) result += ' ';
+  }
+  if (n >= 20) {
+    result += TENS_WORDS[Math.floor(n / 10)];
+    if (n % 10 > 0) result += ` ${ONES_WORDS[n % 10]}`;
+  } else if (n > 0) {
+    result += ONES_WORDS[n];
+  }
+  return result;
+}
+
+/** Converts a whole number into English words, e.g. 1200000 -> "One Million Two Hundred Thousand". */
+export function numberToWords(value: number): string {
+  const n = Math.floor(value);
+  if (n === 0) return 'Zero';
+
+  const UNIT_LABELS = ['', 'Thousand', 'Million', 'Billion'];
+  const parts: string[] = [];
+  let remaining = n;
+  let unitIndex = 0;
+
+  while (remaining > 0) {
+    const chunk = remaining % 1000;
+    if (chunk > 0) {
+      const chunkWords = threeDigitsToWords(chunk);
+      const unitLabel = UNIT_LABELS[unitIndex];
+      parts.unshift(unitLabel ? `${chunkWords} ${unitLabel}` : chunkWords);
+    }
+    remaining = Math.floor(remaining / 1000);
+    unitIndex += 1;
+  }
+
+  return parts.join(' ');
+}

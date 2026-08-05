@@ -171,5 +171,5 @@ export interface Account {
 export const accounts: Account[] = [
   { id: 'mtn-main', name: 'MTN Wallet', number: '1002********143817', balance: 200000, provider: 'MTN' },
   { id: 'airtel-main', name: 'Airtel Wallet', number: '1002********143817', balance: 450000, provider: 'Airtel' },
-  { id: 'mtn-secondary', name: 'MTN Wallet', number: '1002********143817', balance: 200000, provider: 'MTN' },
+  // { id: 'mtn-secondary', name: 'MTN Wallet', number: '1002********143817', balance: 200000, provider: 'MTN' },
 ];
