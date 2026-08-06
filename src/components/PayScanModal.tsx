@@ -479,22 +479,51 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                     </View>
                 )}
 
-                {paymentState === 'reviewing' && (
-                    <View>
+                {paymentState === 'reviewing' && transactionDate && (
+                    <Animated.View style={{ opacity: reviewOpacity, transform: [{ translateY: reviewTranslateY }] }}>
                         <View style={styles.receiptCard}>
+                            <View style={styles.receiptBrandRow}>
+                                <View style={styles.receiptLogoCircle}>
+                                    <Text style={styles.receiptLogoLetter}>P</Text>
+                                </View>
+                                <View style={styles.receiptBrandTextBlock}>
+                                    <Text style={styles.receiptBrandName}>PayMyBills</Text>
+                                    <Text style={styles.receiptTagline}>Simple bills, sorted.</Text>
+                                </View>
+                            </View>
+
+                            <View style={styles.dashedDivider} />
+
                             <View style={styles.receiptRow}>
-                                <Text style={styles.receiptLabel}>Transaction ID</Text>
-                                <Text style={styles.receiptValue}>{transactionId}</Text>
+                                <Text style={styles.receiptLabel}>Receipt Number</Text>
+                                <Text style={styles.receiptValue}>{receiptNumber}</Text>
                             </View>
                             <View style={styles.receiptRow}>
                                 <Text style={styles.receiptLabel}>Date</Text>
-                                <Text style={styles.receiptValue}>
-                                    {transactionDate ? formatReceiptTimestamp(transactionDate) : ''}
-                                </Text>
+                                <View>
+                                    {formatReceiptTimestamp(transactionDate)
+                                        .split(', ')
+                                        .map((line, i) => (
+                                            <Text key={i} style={i === 0 ? styles.receiptValue : styles.receiptValueSub}>
+                                                {line}
+                                            </Text>
+                                        ))}
+                                </View>
                             </View>
                             <View style={styles.receiptRow}>
-                                <Text style={styles.receiptLabel}>Paying from</Text>
-                                <Text style={styles.receiptValue}>{selectedAccount.name}</Text>
+                                <Text style={styles.receiptLabel}>Account Number</Text>
+                                <Text style={styles.receiptValue}>{selectedAccount.number}</Text>
+                            </View>
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Account Name</Text>
+                                <Text style={styles.receiptValue}>{user.name}</Text>
+                            </View>
+
+                            <View style={styles.dashedDivider} />
+
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Transaction ID</Text>
+                                <Text style={styles.receiptValue}>{transactionId}</Text>
                             </View>
                             <View style={styles.receiptRow}>
                                 <Text style={styles.receiptLabel}>Narration</Text>
@@ -502,35 +531,43 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
                                     {narration}
                                 </Text>
                             </View>
-
-                            <View style={styles.receiptDivider} />
-
                             <View style={styles.receiptRow}>
                                 <Text style={styles.receiptLabel}>Amount</Text>
-                                <Text style={styles.receiptValue}>UGX {formatCurrency(amount, false)}</Text>
+                                <Text style={styles.receiptValue}>UGX {formatCurrency(amount)}</Text>
+                            </View>
+                            <Text style={styles.amountInWords}>{numberToWords(amount)} Shillings</Text>
+
+                            <View style={styles.dashedDivider} />
+
+                            <View style={styles.receiptRow}>
+                                <Text style={styles.receiptLabel}>Transaction Charges</Text>
+                                <Text style={styles.receiptValue}>UGX {formatCurrency(transactionCharge)}</Text>
                             </View>
                             <View style={styles.receiptRow}>
-                                <Text style={styles.receiptLabel}>Transaction charges</Text>
-                                <Text style={styles.receiptValue}>UGX {formatCurrency(transactionCharge, false)}</Text>
+                                <Text style={styles.receiptLabel}>Transaction Taxes</Text>
+                                <Text style={styles.receiptValue}>UGX {formatCurrency(transactionTax)}</Text>
                             </View>
 
-                            <View style={styles.receiptDivider} />
+                            <View style={styles.solidDivider} />
 
                             <View style={styles.receiptRow}>
                                 <Text style={styles.receiptTotalLabel}>Total</Text>
-                                <Text style={styles.receiptTotalValue}>UGX {formatCurrency(amount + transactionCharge, false)}</Text>
+                                <Text style={styles.receiptTotalValue}>
+                                    UGX {formatCurrency(amount + transactionCharge + transactionTax)}
+                                </Text>
                             </View>
+
+                            <Text style={styles.thankYouText}>Thank you for using PayMyBills.</Text>
                         </View>
 
-                        <View style={styles.reviewButtonRow}>
-                            <TouchableOpacity style={styles.editButton} activeOpacity={0.8} onPress={handleEditReview}>
-                                <Text style={styles.editButtonText}>Edit</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.confirmPayButton} activeOpacity={0.9} onPress={handleFinalConfirm}>
-                                <Text style={styles.confirmButtonText}>Confirm & pay</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
+                        <TouchableOpacity style={styles.confirmPayButton} activeOpacity={0.9} onPress={handleFinalConfirm}>
+                            <Text style={styles.confirmButtonText}>Confirm & Pay</Text>
+                            <Ionicons name="checkmark-circle" size={rf(18)} color={colors.onAccent} style={{ marginLeft: 8 }} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.editButton} activeOpacity={0.8} onPress={handleEditReview}>
+                            <Text style={styles.editButtonText}>Edit</Text>
+                        </TouchableOpacity>
+                    </Animated.View>
                 )}
 
                 {paymentState === 'processing' && (
@@ -882,7 +919,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        // marginBottom: moderateScale(10),
     },
     charCounter: {
         fontSize: rf(11),
@@ -922,72 +958,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-
-    // Receipt card and review screen styles
-    receiptCard: {
-        backgroundColor: colors.surfaceAlt,
-        borderRadius: moderateScale(16),
-        padding: moderateScale(16),
-        marginBottom: moderateScale(18),
-    },
-    receiptRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        paddingVertical: moderateScale(8),
-    },
-    receiptLabel: {
-        fontSize: rf(12),
-        color: colors.textMuted,
-        flex: 1,
-    },
-    receiptValue: {
-        fontSize: rf(13),
-        fontWeight: '700',
-        color: colors.textPrimary,
-        flex: 1.4,
-        textAlign: 'right',
-    },
     receiptDivider: {
         height: 1,
         backgroundColor: colors.border,
         marginVertical: moderateScale(6),
     },
-    receiptTotalLabel: {
-        fontSize: rf(14),
-        fontWeight: '700',
-        color: colors.textPrimary,
-    },
-    receiptTotalValue: {
-        fontSize: rf(16),
-        fontWeight: '800',
-        color: colors.accent,
-    },
     reviewButtonRow: {
         flexDirection: 'row',
         gap: moderateScale(10),
-    },
-    editButton: {
-        flex: 1,
-        height: moderateScale(52),
-        borderRadius: moderateScale(28),
-        borderWidth: 1.5,
-        borderColor: colors.border,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    editButtonText: {
-        fontSize: rf(15),
-        fontWeight: '700',
-        color: colors.textPrimary,
-    },
-    confirmPayButton: {
-        flex: 1.4,
-        height: moderateScale(52),
-        borderRadius: moderateScale(28),
-        backgroundColor: colors.accent,
-        alignItems: 'center',
-        justifyContent: 'center',
     },
     statusSubtext: {
         marginTop: moderateScale(6),
@@ -1101,6 +1079,124 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     cancelButtonText: {
+        fontSize: rf(15),
+        fontWeight: '700',
+        color: colors.textMuted,
+    },
+    receiptCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: moderateScale(20),
+        padding: moderateScale(18),
+        marginBottom: moderateScale(16),
+    },
+    receiptBrandRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: moderateScale(14),
+    },
+    receiptLogoCircle: {
+        width: moderateScale(40),
+        height: moderateScale(40),
+        borderRadius: moderateScale(20),
+        backgroundColor: colors.accent,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: moderateScale(12),
+    },
+    receiptLogoLetter: {
+        fontSize: rf(20),
+        fontWeight: '800',
+        color: colors.onAccent,
+    },
+    receiptBrandTextBlock: {
+        flex: 1,
+    },
+    receiptBrandName: {
+        fontSize: rf(16),
+        fontWeight: '800',
+        color: '#1A1A1A',
+    },
+    receiptTagline: {
+        fontSize: rf(11),
+        color: '#6E6E6E',
+        marginTop: 2,
+    },
+    dashedDivider: {
+        borderTopWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: '#D8D8D8',
+        marginVertical: moderateScale(10),
+    },
+    solidDivider: {
+        height: 1,
+        backgroundColor: '#1A1A1A',
+        marginVertical: moderateScale(10),
+    },
+    receiptRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        paddingVertical: moderateScale(6),
+    },
+    receiptLabel: {
+        fontSize: rf(12),
+        color: '#6E6E6E',
+        flex: 1,
+    },
+    receiptValue: {
+        fontSize: rf(13),
+        fontWeight: '700',
+        color: '#1A1A1A',
+        flex: 1.4,
+        textAlign: 'right',
+    },
+    receiptValueSub: {
+        fontSize: rf(11),
+        fontWeight: '600',
+        color: '#6E6E6E',
+        textAlign: 'right',
+        marginTop: 2,
+    },
+    amountInWords: {
+        fontSize: rf(12),
+        fontWeight: '700',
+        color: '#1A1A1A',
+        textAlign: 'right',
+        marginTop: moderateScale(2),
+    },
+    receiptTotalLabel: {
+        fontSize: rf(14),
+        fontWeight: '700',
+        color: '#1A1A1A',
+    },
+    receiptTotalValue: {
+        fontSize: rf(16),
+        fontWeight: '800',
+        color: '#1A1A1A',
+    },
+    thankYouText: {
+        fontSize: rf(12),
+        color: '#6E6E6E',
+        textAlign: 'center',
+        marginTop: moderateScale(14),
+    },
+    confirmPayButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: moderateScale(52),
+        borderRadius: moderateScale(28),
+        backgroundColor: colors.accent,
+    },
+    editButton: {
+        marginTop: moderateScale(10),
+        height: moderateScale(52),
+        borderRadius: moderateScale(28),
+        backgroundColor: colors.surface,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    editButtonText: {
         fontSize: rf(15),
         fontWeight: '700',
         color: colors.textMuted,
