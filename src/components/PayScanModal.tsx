@@ -21,6 +21,7 @@ import { rf, moderateScale } from '../utils/responsive';
 import { formatCurrency, formatReceiptTimestamp, numberToWords } from '../utils/format';
 import { user, accounts } from '../constants/mockData';
 import HalfModal from './Modal';
+import { sendTransactionSuccessNotification } from '../utils/notifications';
 
 interface PayScanModalProps {
     visible: boolean;
@@ -211,6 +212,11 @@ export default function PayScanModal({ visible, onClose }: PayScanModalProps) {
             setTimeout(() => {
                 setPaymentState('success');
                 Animated.spring(successScale, { toValue: 1, useNativeDriver: true, bounciness: 10 }).start();
+                sendTransactionSuccessNotification({
+                    amountLabel: `UGX ${formatCurrency(amount, false)}`,
+                    accountName: selectedAccount.name,
+                    narration,
+                });
                 setTimeout(() => {
                     // Return the person to Home once the success state has been visible
                     // long enough to register, rather than leaving them to dismiss it manually.
