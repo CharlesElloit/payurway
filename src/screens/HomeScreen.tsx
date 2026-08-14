@@ -14,6 +14,7 @@ import BottomTabBar, { TabKey } from '../components/BottomTabBar';
 import MyBillsHeader, { MY_BILLS_HEADER_HEIGHT } from '../components/MyBillsHeader';
 import AddBillModal from '../components/AddBillModal';
 import PayScanModal from '../components/PayScanModal';
+import ProfileScreen from './ProfileScreen'; // Import your ProfileScreen
 
 import {
   user,
@@ -29,30 +30,22 @@ import {
   paidBills,
 } from '../constants/mockData';
 
-// Direct-child index of the Bill Timeline section within the ScrollView's
-// content — this is what react-native's stickyHeaderIndices pins in place.
 const BILL_TIMELINE_STICKY_INDEX = 2;
-// How many pixels of scroll the "ease down" reveal animation plays over.
 const REVEAL_DISTANCE = moderateScale(60);
 const CHART_FADE_DISTANCE = moderateScale(180);
 
-export default function HomeScreen() {
+interface HomeScreenProps {
+  onLogout?: () => void;
+}
+
+export default function HomeScreen({ onLogout }: HomeScreenProps) {
   const [selectedDay, setSelectedDay] = useState('20');
   const [billsTab, setBillsTab] = useState<'Upcoming' | 'Paid'>('Upcoming');
   const [activeNavTab, setActiveNavTab] = useState<TabKey>('Home');
   const [isAddBillVisible, setIsAddBillVisible] = useState(false);
   const [isPayScanVisible, setIsPayScanVisible] = useState(false);
-
-  // Y position of the Bill Timeline section within the scroll content, captured via onLayout.
   const [billTimelineY, setBillTimelineY] = useState(0);
-
-  // Height of the sticky Bill Timeline section — needed to know how much of the
-  // screen it covers once pinned, so the chart fade is timed against its bottom
-  // edge rather than its own raw scroll offset.
   const [stickySectionHeight, setStickySectionHeight] = useState(0);
-
-  // Y position of the chart section, captured via onLayout — used to fade it
-  // out as it scrolls in behind the sticky Bill Timeline section.
   const [chartY, setChartY] = useState(0);
 
   const bills = billsTab === 'Upcoming' ? upcomingBills : paidBills;
@@ -60,8 +53,6 @@ export default function HomeScreen() {
   const scrollY = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<any>(null);
 
-  // Guard against the header reveal firing before onLayout has measured the
-  // real section position (defaults to "far away" so nothing shows early).
   const triggerY = billTimelineY > 0 ? billTimelineY : Number.MAX_SAFE_INTEGER;
   const revealInputRange = [Math.max(triggerY - REVEAL_DISTANCE, 0), triggerY];
 
@@ -76,8 +67,6 @@ export default function HomeScreen() {
     extrapolate: 'clamp',
   });
 
-  // Fades the chart to transparent over CHART_FADE_DISTANCE once scroll passes
-  // its top edge, instead of letting it hard-clip under the sticky section.
   const chartTriggerY = chartY > 0 ? chartY : Number.MAX_SAFE_INTEGER;
   const chartFadeStart = chartTriggerY - stickySectionHeight;
 
@@ -89,88 +78,90 @@ export default function HomeScreen() {
 
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-    { useNativeDriver: false } // height/color-style interpolations require the JS driver
+    { useNativeDriver: false }
   ) as (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
-      <MyBillsHeader
-        height={headerHeight}
-        opacity={headerOpacity}
-        onBack={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
-        onAdd={() => setIsAddBillVisible(true)}
-      />
-
-      <Animated.ScrollView
-        ref={scrollRef}
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        stickyHeaderIndices={[BILL_TIMELINE_STICKY_INDEX]}
-      >
-        <HeroHeaderCard
-          name={user.name}
-          id={user.id}
-          avatarUrl={user.avatarUrl}
-          notificationCount={user.notificationCount}
-          days={weekDays}
-          selectedDayId={selectedDay}
-          onSelectDay={setSelectedDay}
-        />
-
-        <View style={styles.section}>
-          <WalletBalanceCard
-            balance={wallet.balance}
-            accountNumber={wallet.accountNumber}
-            movementUp={wallet.movementUp}
-            movementDown={wallet.movementDown}
+      {/* CONDITIONAL RENDER: Display ProfileScreen or Main Home View based on active tab */}
+      {activeNavTab === 'Profile' ? (
+        <ProfileScreen onLogout={onLogout} />
+      ) : (
+        <>
+          <MyBillsHeader
+            height={headerHeight}
+            opacity={headerOpacity}
+            onBack={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+            onAdd={() => setIsAddBillVisible(true)}
           />
-        </View>
 
-        {/* Sticky section: index 3 among the ScrollView's direct children — pins to the
-            top of the scroll viewport (i.e. right under MyBillsHeader) once reached,
-            while everything below continues to scroll underneath it. */}
-        <View
-          style={[styles.section, styles.stickySection]}
-          onLayout={(e) => {
-            setBillTimelineY(e.nativeEvent.layout.y);
-            setStickySectionHeight(e.nativeEvent.layout.height);
-          }}
-        >
-          <BillTimelineTable year={2026} rows={timelineRows} total={timelineTotal} />
-        </View>
+          <Animated.ScrollView
+            ref={scrollRef}
+            style={styles.scroll}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            stickyHeaderIndices={[BILL_TIMELINE_STICKY_INDEX]}
+          >
+            <HeroHeaderCard
+              name={user.name}
+              id={user.id}
+              avatarUrl={user.avatarUrl}
+              notificationCount={user.notificationCount}
+              days={weekDays}
+              selectedDayId={selectedDay}
+              onSelectDay={setSelectedDay}
+            />
 
-        {/* <View style={styles.section}> */}
-        <Animated.View style={[styles.section, { opacity: chartOpacity }]} onLayout={(e) => setChartY(e.nativeEvent.layout.y)}>
-          <AnimatedBarChart
-            data={chartData}
-            months={chartMonths}
-            currentMonth={currentMonth}
-            average={chartAverage}
-          />
-        </Animated.View>
-        {/* </View> */}
+            <View style={styles.section}>
+              <WalletBalanceCard
+                balance={wallet.balance}
+                accountNumber={wallet.accountNumber}
+                movementUp={wallet.movementUp}
+                movementDown={wallet.movementDown}
+              />
+            </View>
 
-        <View style={styles.section}>
-          <TabSwitcher
-            tabs={['Upcoming', 'Paid']}
-            activeTab={billsTab}
-            onChange={(t) => setBillsTab(t as 'Upcoming' | 'Paid')}
-          />
-        </View>
+            <View
+              style={[styles.section, styles.stickySection]}
+              onLayout={(e) => {
+                setBillTimelineY(e.nativeEvent.layout.y);
+                setStickySectionHeight(e.nativeEvent.layout.height);
+              }}
+            >
+              <BillTimelineTable year={2026} rows={timelineRows} total={timelineTotal} />
+            </View>
 
-        <View style={[styles.section, styles.listSection]}>
-          {bills.map((bill) => (
-            <BillListItem key={bill.id} bill={bill} />
-          ))}
-        </View>
-      </Animated.ScrollView>
+            <Animated.View style={[styles.section, { opacity: chartOpacity }]} onLayout={(e) => setChartY(e.nativeEvent.layout.y)}>
+              <AnimatedBarChart
+                data={chartData}
+                months={chartMonths}
+                currentMonth={currentMonth}
+                average={chartAverage}
+              />
+            </Animated.View>
 
-      {/* <BottomTabBar activeTab={activeNavTab} onChange={setActiveNavTab} /> */}
+            <View style={styles.section}>
+              <TabSwitcher
+                tabs={['Upcoming', 'Paid']}
+                activeTab={billsTab}
+                onChange={(t) => setBillsTab(t as 'Upcoming' | 'Paid')}
+              />
+            </View>
+
+            <View style={[styles.section, styles.listSection]}>
+              {bills.map((bill) => (
+                <BillListItem key={bill.id} bill={bill} />
+              ))}
+            </View>
+          </Animated.ScrollView>
+        </>
+      )}
+
+      {/* PERSISTENT BOTTOM TAB BAR */}
       <BottomTabBar
         activeTab={activeNavTab}
         onChange={(tab) => {

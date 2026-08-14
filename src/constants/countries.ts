@@ -23,4 +23,4 @@ export const countries: Country[] = [
     { code: 'AE', name: 'United Arab Emirates', dialCode: '+971', flag: '🇦🇪' },
 ];
 
-export const defaultCountry = countries[0];
+export const defaultCountry = countries[1];

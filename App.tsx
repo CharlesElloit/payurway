@@ -54,6 +54,11 @@ export default function App() {
     setStage('biometric');
   };
 
+  // Handler passed to HomeScreen & ProfileScreen to redirect back to registration
+  const handleLogout = () => {
+    setStage('registration');
+  };
+
   if (stage === 'loading') {
     return (
       <SafeAreaProvider>
@@ -87,7 +92,7 @@ export default function App() {
         />
       )}
 
-      {stage === 'home' && <HomeScreen />}
+      {stage === 'home' && <HomeScreen onLogout={handleLogout} />}
     </SafeAreaProvider>
   );
 }
