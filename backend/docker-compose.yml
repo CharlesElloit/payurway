@@ -1,0 +1,84 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: paymybills-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: paymybills
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d paymybills']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: paymybills-redis
+    restart: unless-stopped
+    ports:
+      - '6380:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: paymybills-api
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/paymybills
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change_this_to_a_secure_random_string}
+      JWT_EXPIRY: 15m
+      JWT_REFRESH_EXPIRY: 7d
+      MTN_API_KEY: ${MTN_API_KEY:-}
+      MTN_API_URL: https://proxy.momoapi.mtn.com
+      MTN_SUBSCRIPTION_KEY: ${MTN_SUBSCRIPTION_KEY:-}
+      MTN_ENVIRONMENT: sandbox
+      MTN_CALLBACK_URL: ${MTN_CALLBACK_URL:-http://localhost:3000/api/v1/webhooks/mtn}
+      AIRTEL_API_KEY: ${AIRTEL_API_KEY:-}
+      AIRTEL_API_URL: https://openapi.airtel.africa
+      AIRTEL_CLIENT_ID: ${AIRTEL_CLIENT_ID:-}
+      AIRTEL_CLIENT_SECRET: ${AIRTEL_CLIENT_SECRET:-}
+      AIRTEL_CALLBACK_URL: ${AIRTEL_CALLBACK_URL:-http://localhost:3000/api/v1/webhooks/airtel}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: paymybills-pgadmin
+    restart: unless-stopped
+    ports:
+      - '5051:80'
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@paymybills.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
