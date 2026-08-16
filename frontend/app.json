@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "PayMyBills",
+    "slug": "paymybills",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "splash": {
+      "backgroundColor": "#000000",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.paymybills.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "PayMyBills uses Face ID to securely unlock your account."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#000000"
+      },
+      "package": "com.paymybills.app",
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "03194097-1405-46cb-b20c-7238e467d4c4"
+      }
+    }
+  }
+}
