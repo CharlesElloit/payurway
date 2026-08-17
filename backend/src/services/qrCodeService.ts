@@ -10,10 +10,8 @@ import logger from '../utils/logger';
 
 export class QRCodeService {
   async generateQRCode(userId: string, data: {
-    amount?: number;
     carrier: Carrier;
     currency?: string;
-    description?: string;
   }) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundError('User not found');
@@ -39,7 +37,6 @@ export class QRCodeService {
       userId,
       phone: account.phoneNumber,
       carrier: data.carrier,
-      amount: data.amount || null,
       expiresAt: expiresAt.toISOString(),
     });
 
@@ -51,9 +48,7 @@ export class QRCodeService {
         userId,
         phone: account.phoneNumber,
         carrier: data.carrier,
-        amount: data.amount || null,
         currency: data.currency || 'UGX',
-        description: data.description || null,
         signature,
         isOneTime: true,
         isActive: true,
@@ -61,12 +56,13 @@ export class QRCodeService {
       },
     });
 
+    const receiverName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.phone;
+
     const qrCodeData: QRCodeData = {
       id: qrId,
       receiverId: userId,
-      receiverName: `${user.firstName} ${user.lastName}`,
+      receiverName,
       receiverPhone: account.phoneNumber,
-      amount: data.amount || undefined,
       carrier: data.carrier,
       currency: data.currency || 'UGX',
       createdAt: qrRecord.createdAt.toISOString(),
@@ -119,12 +115,13 @@ export class QRCodeService {
     const user = await prisma.user.findUnique({ where: { id: qrRecord.userId } });
     if (!user) throw new NotFoundError('Receiver not found');
 
+    const receiverName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.phone;
+
     const qrCodeData: QRCodeData = {
       id: qrRecord.id,
       receiverId: qrRecord.userId,
-      receiverName: `${user.firstName} ${user.lastName}`,
+      receiverName,
       receiverPhone: qrRecord.phone,
-      amount: qrRecord.amount ? Number(qrRecord.amount) : undefined,
       carrier: qrRecord.carrier as Carrier,
       currency: qrRecord.currency,
       createdAt: qrRecord.createdAt.toISOString(),
@@ -134,7 +131,7 @@ export class QRCodeService {
     return qrCodeData;
   }
 
-  async validateAndConsumeQRCode(codeId: string, signature: string) {
+  async validateAndConsumeQRCode(codeId: string, signature: string, amount: number, senderPhone: string, senderId?: string, description?: string) {
     const qrData = await this.getQRCode(codeId);
 
     const expectedSig = signQRCodeData(
@@ -143,7 +140,6 @@ export class QRCodeService {
         userId: qrData.receiverId,
         phone: qrData.receiverPhone,
         carrier: qrData.carrier,
-        amount: qrData.amount || null,
         expiresAt: qrData.expiresAt,
       })
     );
@@ -167,7 +163,23 @@ export class QRCodeService {
       await redis.del(`qr:${codeId}`);
     }
 
-    return qrData;
+    const { paymentService } = await import('./paymentService');
+    const payment = await paymentService.initiatePayment({
+      senderId,
+      senderPhone,
+      receiverId: qrData.receiverId,
+      receiverPhone: qrData.receiverPhone,
+      amount,
+      carrier: qrData.carrier,
+      currency: qrData.currency,
+      description,
+      qrCodeId: codeId,
+    });
+
+    return {
+      qrData,
+      payment,
+    };
   }
 
   async getQRHistory(userId: string, page = 1, limit = 20) {

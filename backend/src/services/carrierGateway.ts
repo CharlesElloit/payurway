@@ -7,6 +7,7 @@ export interface CarrierGateway {
   requestToPay(data: CarrierPaymentRequest): Promise<CarrierPaymentResponse>;
   transfer(data: CarrierTransferRequest): Promise<CarrierTransferResponse>;
   checkStatus(transactionId: string): Promise<{ status: string; details?: any }>;
+  getBalance(phoneNumber: string): Promise<{ balance: number; currency: string }>;
 }
 
 class CarrierGatewayFactory {

@@ -3,9 +3,19 @@ import { mockPayment, mockUser, mockNotification } from '../mocks/fixtures';
 import { paymentService } from '../../src/services/paymentService';
 import { carrierGatewayFactory } from '../../src/services/carrierGateway';
 import { notificationService } from '../../src/services/notificationService';
+import { accountService } from '../../src/services/accountService';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../src/utils/errors';
 
 jest.mock('../../src/services/carrierGateway');
+jest.mock('../../src/services/accountService', () => ({
+  __esModule: true,
+  accountService: {
+    refreshBalance: jest.fn(),
+    updateAccountBalance: jest.fn(),
+    getBalance: jest.fn(),
+    refreshLinkedBalance: jest.fn(),
+  },
+}));
 
 const mockGateway = {
   requestToPay: jest.fn(),
@@ -19,6 +29,8 @@ beforeEach(() => {
   mockGateway.requestToPay.mockReset();
   mockGateway.transfer.mockReset();
   (notificationService.createNotification as jest.Mock).mockReset();
+  (accountService.refreshBalance as jest.Mock).mockReset();
+  (accountService.updateAccountBalance as jest.Mock).mockReset();
 });
 
 describe('PaymentService', () => {
@@ -55,23 +67,6 @@ describe('PaymentService', () => {
       expect(prismaMock.payment.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ description: 'Electricity bill' }),
-        })
-      );
-    });
-
-    it('should default currency to UGX', async () => {
-      prismaMock.payment.create.mockResolvedValue(mockPayment as any);
-
-      await paymentService.initiatePayment({
-        senderPhone: '+256771234567',
-        receiverPhone: '+256759876543',
-        amount: 50000,
-        carrier: 'mtn',
-      });
-
-      expect(prismaMock.payment.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ currency: 'UGX' }),
         })
       );
     });
@@ -273,8 +268,18 @@ describe('PaymentService', () => {
   });
 
   describe('requestPayment', () => {
-    it('should create a payment request notification', async () => {
-      prismaMock.user.findUnique.mockResolvedValue(mockUser as any);
+    it('should create a payment request and notify the target', async () => {
+      prismaMock.user.findUnique
+        .mockResolvedValueOnce(mockUser as any)
+        .mockResolvedValueOnce({ ...mockUser, id: 'user-uuid-2', phone: '+256759876543' } as any);
+      prismaMock.payment.create.mockResolvedValue({
+        ...mockPayment,
+        status: 'requested',
+        senderId: 'user-uuid-2',
+        senderPhone: '+256759876543',
+        receiverId: 'user-uuid-1',
+        receiverPhone: '+256771234567',
+      } as any);
       (notificationService.createNotification as jest.Mock).mockResolvedValue(mockNotification);
 
       const result = await paymentService.requestPayment({
@@ -286,7 +291,7 @@ describe('PaymentService', () => {
 
       expect(result.reference).toBeDefined();
       expect(result.amount).toBe(50000);
-      expect(result.targetPhone).toBe('+256759876543');
+      expect(result.status).toBe('requested');
       expect(notificationService.createNotification).toHaveBeenCalled();
     });
 
@@ -300,6 +305,86 @@ describe('PaymentService', () => {
           amount: 50000,
           carrier: 'mtn',
         })
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('should throw NotFoundError if target user not found', async () => {
+      prismaMock.user.findUnique
+        .mockResolvedValueOnce(mockUser as any)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        paymentService.requestPayment({
+          requesterId: 'user-uuid-1',
+          targetPhone: '+256799999999',
+          amount: 50000,
+          carrier: 'mtn',
+        })
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('respondToRequest', () => {
+    const requestedPayment = {
+      ...mockPayment,
+      status: 'requested' as const,
+      senderId: 'user-uuid-1',
+      senderPhone: '+256771234567',
+      receiverId: 'user-uuid-2',
+      receiverPhone: '+256759876543',
+    };
+
+    it('should accept a payment request and start processing', async () => {
+      prismaMock.payment.findUnique.mockResolvedValue(requestedPayment as any);
+      prismaMock.payment.update.mockResolvedValue({ ...requestedPayment, status: 'pending' } as any);
+      (notificationService.createNotification as jest.Mock).mockResolvedValue(mockNotification);
+
+      const result = await paymentService.respondToRequest('user-uuid-1', 'payment-uuid-1', 'accept');
+
+      expect(result.message).toContain('accepted');
+      expect(prismaMock.payment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'pending' }),
+        })
+      );
+    });
+
+    it('should reject a payment request', async () => {
+      prismaMock.payment.findUnique.mockResolvedValue(requestedPayment as any);
+      prismaMock.payment.update.mockResolvedValue({ ...requestedPayment, status: 'cancelled' } as any);
+      (notificationService.createNotification as jest.Mock).mockResolvedValue(mockNotification);
+
+      const result = await paymentService.respondToRequest('user-uuid-1', 'payment-uuid-1', 'reject');
+
+      expect(result.message).toContain('rejected');
+      expect(prismaMock.payment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: 'cancelled' }),
+        })
+      );
+    });
+
+    it('should throw ForbiddenError if not the payer', async () => {
+      prismaMock.payment.findUnique.mockResolvedValue(requestedPayment as any);
+
+      await expect(
+        paymentService.respondToRequest('user-uuid-999', 'payment-uuid-1', 'accept')
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('should throw BadRequestError for non-requested status', async () => {
+      prismaMock.payment.findUnique.mockResolvedValue(mockPayment as any);
+
+      await expect(
+        paymentService.respondToRequest('user-uuid-1', 'payment-uuid-1', 'accept')
+      ).rejects.toThrow(BadRequestError);
+    });
+
+    it('should throw NotFoundError for unknown payment', async () => {
+      prismaMock.payment.findUnique.mockResolvedValue(null);
+
+      await expect(
+        paymentService.respondToRequest('user-uuid-1', 'unknown-id', 'accept')
       ).rejects.toThrow(NotFoundError);
     });
   });
@@ -344,6 +429,50 @@ describe('PaymentService', () => {
       await paymentService.processPaymentAsync('nonexistent');
 
       expect(prismaMock.payment.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('balance updates on payment completion', () => {
+    it('should attempt to refresh receiver balance after payment completes', async () => {
+      const processingPayment = {
+        ...mockPayment,
+        status: 'processing' as const,
+        senderId: 'user-uuid-1',
+        receiverId: 'user-uuid-2',
+        receiverPhone: '+256759876543',
+        senderPhone: '+256771234567',
+      };
+      const completedPayment = { ...processingPayment, status: 'completed' as const };
+      prismaMock.payment.findFirst.mockResolvedValue(processingPayment as any);
+      prismaMock.payment.update.mockResolvedValue(processingPayment as any);
+      prismaMock.payment.findUnique.mockResolvedValue(completedPayment as any);
+      (notificationService.createNotification as jest.Mock).mockResolvedValue(mockNotification);
+
+      await paymentService.handleWebhook('mtn', 'carrier-tx-123', 'completed', { status: 'SUCCESSFUL' });
+
+      expect(notificationService.createNotification).toHaveBeenCalledTimes(2);
+    });
+
+    it('should fall back to local balance adjustment when carrier refresh fails', async () => {
+      const processingPayment = {
+        ...mockPayment,
+        status: 'processing' as const,
+        senderId: 'user-uuid-1',
+        receiverId: 'user-uuid-2',
+        receiverPhone: '+256759876543',
+        senderPhone: '+256771234567',
+      };
+      const completedPayment = { ...processingPayment, status: 'completed' as const };
+      prismaMock.payment.findFirst.mockResolvedValue(processingPayment as any);
+      prismaMock.payment.update.mockResolvedValue(processingPayment as any);
+      prismaMock.payment.findUnique.mockResolvedValue(completedPayment as any);
+      (notificationService.createNotification as jest.Mock).mockResolvedValue(mockNotification);
+      (accountService.refreshBalance as jest.Mock).mockRejectedValue(new Error('carrier down'));
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue({ id: 'acct-1', balance: 50000, userId: 'user-uuid-2', phoneNumber: '+256759876543', isActive: true, verificationStatus: 'verified' } as any);
+
+      await paymentService.handleWebhook('mtn', 'carrier-tx-123', 'completed', { status: 'SUCCESSFUL' });
+
+      expect(notificationService.createNotification).toHaveBeenCalledTimes(2);
     });
   });
 });

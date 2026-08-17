@@ -1,0 +1,434 @@
+### ============================================================
+
+
+### PayMyBills API — REST Client File
+
+
+### Install the "REST Client" extension for VS Code to use this.
+
+
+### ============================================================
+@baseUrl = http://localhost:3000/api/v1
+
+
+### After login, paste your token here:
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjdiNDlhYzM5LTI2OWYtNDQzYS04NmIzLTcwYzgwNWU5ZWJlYiIsInBob25lIjoiKzI1Njc2MTM4MDI5NCIsImlhdCI6MTc4Njk5Nzg0OCwiZXhwIjoxNzg2OTk4NzQ4fQ.-Tcon9O7SilSDZHPoUc8xjwycEe_BUSCRQJ1wZ1nh0I
+
+
+### ============================================================
+
+
+### HEALTH
+
+
+### ============================================================
+
+
+### Health check
+GET {{baseUrl}}/health
+
+
+### ============================================================
+
+
+### AUTH
+
+
+### ============================================================
+
+
+### Register (phone + password)
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "phone": "+256761380294",
+  "password": "SecureP@ss123"
+}
+
+
+### Register second user
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "phone": "+256759876543",
+  "password": "SecureP@ss456"
+}
+
+
+### Login (phone + password)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "phone": "+256761380294",
+  "password": "SecureP@ss123"
+}
+
+
+### Verify OTP (use code sent to phone)
+POST {{baseUrl}}/auth/verify-otp
+Content-Type: application/json
+
+{
+  "phone": "+256761380294",
+  "code": "123456"
+}
+
+
+### Resend OTP
+POST {{baseUrl}}/auth/resend-otp
+Content-Type: application/json
+
+{
+  "phone": "+256761380294"
+}
+
+
+### Refresh token
+POST {{baseUrl}}/auth/refresh-token
+Content-Type: application/json
+
+{
+  "refreshToken": "YOUR_REFRESH_TOKEN"
+}
+
+
+### Logout
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{authToken}}
+
+
+### Get profile
+GET {{baseUrl}}/auth/profile
+Authorization: Bearer {{authToken}}
+
+
+### Update profile
+PATCH {{baseUrl}}/auth/profile
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "firstName": "Charles",
+  "lastName": "Silvano",
+  "email": "aciforcharles@gmail.com"
+}
+
+
+### Change password
+POST {{baseUrl}}/auth/change-password
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "currentPassword": "SecureP@ss123",
+  "newPassword": "NewSecureP@ss456"
+}
+
+
+### ============================================================
+
+
+### ACCOUNTS
+
+
+### ============================================================
+
+
+### Link an MTN account
+POST {{baseUrl}}/accounts/link
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "phoneNumber": "+256761380294",
+  "carrier": "mtn"
+}
+
+
+### Link an Airtel account
+POST {{baseUrl}}/accounts/link
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "phoneNumber": "+256759876543",
+  "carrier": "airtel"
+}
+
+
+### Verify account (OTP from carrier)
+POST {{baseUrl}}/accounts/verify
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "accountId": "ACCOUNT_UUID",
+  "otp": "123456"
+}
+
+
+### List all accounts
+GET {{baseUrl}}/accounts
+Authorization: Bearer {{authToken}}
+
+
+### Get account by ID
+GET {{baseUrl}}/accounts/5cab15c1-b14e-49dc-961d-9092e655d35b
+Authorization: Bearer {{authToken}}
+
+
+### Get account balance
+GET {{baseUrl}}/accounts/5cab15c1-b14e-49dc-961d-9092e655d35b/balance
+Authorization: Bearer {{authToken}}
+
+
+### Refresh account balance (force carrier fetch)
+POST {{baseUrl}}/accounts/5cab15c1-b14e-49dc-961d-9092e655d35b/balance/refresh
+Authorization: Bearer {{authToken}}
+
+
+### Set default account
+PATCH {{baseUrl}}/accounts/5cab15c1-b14e-49dc-961d-9092e655d35b/default
+Authorization: Bearer {{authToken}}
+
+
+### Remove (soft-delete) account
+DELETE {{baseUrl}}/accounts/5cab15c1-b14e-49dc-961d-9092e655d35b
+Authorization: Bearer {{authToken}}
+
+
+### ============================================================
+
+
+### QR CODES
+
+
+### ============================================================
+
+
+### Generate a QR code
+POST {{baseUrl}}/qr/generate
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "carrier": "mtn",
+  "isOneTime": true
+}
+
+
+### Get QR code details
+GET {{baseUrl}}/qr/QR_CODE_UUID
+Authorization: Bearer {{authToken}}
+
+
+### Scan a QR code (initiates payment with user-defined amount)
+POST {{baseUrl}}/qr/scan
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "qrCodeId": "QR_CODE_UUID",
+  "signature": "QR_SIGNATURE",
+  "amount": 25000,
+  "senderPhone": "+256771234567",
+  "description": "Coffee payment"
+}
+
+
+### Get QR history
+GET {{baseUrl}}/qr/history
+Authorization: Bearer {{authToken}}
+
+
+### Revoke a QR code
+DELETE {{baseUrl}}/qr/QR_CODE_UUID
+Authorization: Bearer {{authToken}}
+
+
+### ============================================================
+
+
+### PAYMENTS
+
+
+### ============================================================
+
+
+### Initiate a payment
+POST {{baseUrl}}/payments/initiate
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "senderPhone": "+256771234567",
+  "receiverPhone": "+256759876543",
+  "amount": 50000,
+  "carrier": "mtn",
+  "description": "Rent for August"
+}
+
+
+### Get all payments (paginated)
+GET {{baseUrl}}/payments?page=1&limit=20
+Authorization: Bearer {{authToken}}
+
+
+### Get payments filtered by status
+GET {{baseUrl}}/payments?status=completed&page=1&limit=10
+Authorization: Bearer {{authToken}}
+
+
+### Get payment by ID
+GET {{baseUrl}}/payments/PAYMENT_UUID
+Authorization: Bearer {{authToken}}
+
+
+### Get payment by reference
+GET {{baseUrl}}/payments/reference/PMB-XXXXXXXX-XXXX
+Authorization: Bearer {{authToken}}
+
+
+### Cancel a pending payment
+POST {{baseUrl}}/payments/PAYMENT_UUID/cancel
+Authorization: Bearer {{authToken}}
+
+
+### Request payment from another user
+POST {{baseUrl}}/payments/request
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "targetPhone": "+256759876543",
+  "amount": 30000,
+  "carrier": "mtn",
+  "description": "Dinner split"
+}
+
+
+### Get pending payment requests
+GET {{baseUrl}}/payments/requests?page=1&limit=20
+Authorization: Bearer {{authToken}}
+
+
+### Accept a payment request
+POST {{baseUrl}}/payments/PAYMENT_UUID/respond
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "action": "accept"
+}
+
+
+### Reject a payment request
+POST {{baseUrl}}/payments/PAYMENT_UUID/respond
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "action": "reject"
+}
+
+
+### ============================================================
+
+
+### NOTIFICATIONS
+
+
+### ============================================================
+
+
+### Get all notifications
+GET {{baseUrl}}/notifications?page=1&limit=20
+Authorization: Bearer {{authToken}}
+
+
+### Mark a notification as read
+PATCH {{baseUrl}}/notifications/NOTIFICATION_UUID/read
+Authorization: Bearer {{authToken}}
+
+
+### Mark all notifications as read
+PATCH {{baseUrl}}/notifications/read-all
+Authorization: Bearer {{authToken}}
+
+
+### ============================================================
+
+
+### WEBHOOKS (called by carrier gateways, no auth)
+
+
+### ============================================================
+
+
+### MTN webhook callback
+POST {{baseUrl}}/webhooks/mtn
+Content-Type: application/json
+
+{
+  "transactionId": "carrier-tx-123",
+  "status": "completed",
+  "response": {
+    "status": "SUCCESSFUL",
+    "amount": "50000",
+    "currency": "UGX"
+  }
+}
+
+
+### Airtel webhook callback
+POST {{baseUrl}}/webhooks/airtel
+Content-Type: application/json
+
+{
+  "transactionId": "carrier-tx-456",
+  "status": "completed",
+  "response": {
+    "status": "successful",
+    "amount": "50000",
+    "currency": "UGX"
+  }
+}
+
+
+### Status callback
+POST {{baseUrl}}/webhooks/status
+Content-Type: application/json
+
+{
+  "carrier": "mtn",
+  "transactionId": "carrier-tx-123",
+  "status": "completed",
+  "response": {}
+}
+
+
+### ============================================================
+
+
+### ADMIN
+
+
+### ============================================================
+
+
+### Get all transactions (admin)
+GET {{baseUrl}}/admin/transactions?page=1&limit=50
+Authorization: Bearer {{authToken}}
+
+
+### Get all users (admin)
+GET {{baseUrl}}/admin/users?page=1&limit=50
+Authorization: Bearer {{authToken}}
+
+
+### Get analytics (admin)
+GET {{baseUrl}}/admin/analytics
+Authorization: Bearer {{authToken}}

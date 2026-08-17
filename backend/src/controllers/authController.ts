@@ -14,10 +14,10 @@ export class AuthController {
 
   async login(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { email, password } = req.body;
+      const { phone, password } = req.body;
       const userAgent = req.headers['user-agent'];
       const ipAddress = req.ip;
-      const result = await authService.login(email, password, userAgent, ipAddress);
+      const result = await authService.login(phone, password, userAgent, ipAddress);
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);

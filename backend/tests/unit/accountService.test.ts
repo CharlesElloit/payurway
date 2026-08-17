@@ -1,10 +1,12 @@
 import { prismaMock, redisMock, resetMocks } from '../mocks/setup';
 import { mockAccount, mockPendingAccount, mockUser } from '../mocks/fixtures';
 import { accountService } from '../../src/services/accountService';
+import { carrierGatewayFactory } from '../../src/services/carrierGateway';
 import { BadRequestError, NotFoundError, ConflictError } from '../../src/utils/errors';
 
 beforeEach(() => {
   resetMocks();
+  jest.restoreAllMocks();
 });
 
 describe('AccountService', () => {
@@ -248,6 +250,133 @@ describe('AccountService', () => {
       const result = await accountService.getDefaultAccount('user-uuid-1');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getBalance', () => {
+    it('should return cached balance if fresh (< 5 min old)', async () => {
+      const freshAccount = {
+        ...mockAccount,
+        balance: 50000,
+        balanceUpdatedAt: new Date(Date.now() - 60 * 1000),
+      };
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(freshAccount as any);
+
+      const result = await accountService.getBalance('user-uuid-1', 'account-uuid-1');
+
+      expect(result.balance).toBe(50000);
+      expect(result.fresh).toBe(false);
+    });
+
+    it('should refresh balance if stale (> 5 min old)', async () => {
+      const staleAccount = {
+        ...mockAccount,
+        balance: 50000,
+        balanceUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      };
+      const updatedAccount = {
+        ...staleAccount,
+        balance: 45000,
+        balanceUpdatedAt: new Date(),
+      };
+
+      prismaMock.mobileMoneyAccount.findFirst
+        .mockResolvedValueOnce(staleAccount as any)
+        .mockResolvedValueOnce(updatedAccount as any);
+
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        getBalance: jest.fn().mockResolvedValue({ balance: 45000, currency: 'UGX' }),
+      });
+      prismaMock.mobileMoneyAccount.update.mockResolvedValue(updatedAccount as any);
+
+      const result = await accountService.getBalance('user-uuid-1', 'account-uuid-1');
+
+      expect(result.balance).toBe(45000);
+      expect(result.fresh).toBe(true);
+    });
+
+    it('should return stale balance if carrier refresh fails', async () => {
+      const staleAccount = {
+        ...mockAccount,
+        balance: 30000,
+        balanceUpdatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      };
+      prismaMock.mobileMoneyAccount.findFirst
+        .mockResolvedValueOnce(staleAccount as any)
+        .mockResolvedValueOnce(staleAccount as any);
+
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        getBalance: jest.fn().mockRejectedValue(new Error('carrier down')),
+      });
+
+      const result = await accountService.getBalance('user-uuid-1', 'account-uuid-1');
+
+      expect(result.balance).toBe(30000);
+      expect(result.fresh).toBe(false);
+    });
+
+    it('should throw NotFoundError for unverified account', async () => {
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(null);
+
+      await expect(
+        accountService.getBalance('user-uuid-1', 'unknown-id')
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('refreshBalance', () => {
+    it('should fetch fresh balance from carrier and update DB', async () => {
+      const account = { ...mockAccount, balance: 10000, balanceUpdatedAt: null };
+      const updatedAccount = { ...account, balance: 25000, balanceUpdatedAt: new Date() };
+
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(account as any);
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        getBalance: jest.fn().mockResolvedValue({ balance: 25000, currency: 'UGX' }),
+      });
+      prismaMock.mobileMoneyAccount.update.mockResolvedValue(updatedAccount as any);
+
+      const result = await accountService.refreshBalance('user-uuid-1', 'account-uuid-1');
+
+      expect(result.balance).toBe(25000);
+      expect(result.fresh).toBe(true);
+      expect(result.currency).toBe('UGX');
+      expect(prismaMock.mobileMoneyAccount.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'account-uuid-1' },
+          data: expect.objectContaining({ balance: 25000 }),
+        })
+      );
+    });
+
+    it('should throw if account not found', async () => {
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(null);
+
+      await expect(
+        accountService.refreshBalance('user-uuid-1', 'unknown-id')
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('updateAccountBalance', () => {
+    it('should update balance and balanceUpdatedAt', async () => {
+      prismaMock.mobileMoneyAccount.update.mockResolvedValue({} as any);
+
+      await accountService.updateAccountBalance('user-uuid-1', 'account-uuid-1', 75000);
+
+      expect(prismaMock.mobileMoneyAccount.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'account-uuid-1' },
+          data: expect.objectContaining({ balance: 75000 }),
+        })
+      );
+    });
+
+    it('should not throw if update fails', async () => {
+      prismaMock.mobileMoneyAccount.update.mockRejectedValue(new Error('db error'));
+
+      await expect(
+        accountService.updateAccountBalance('user-uuid-1', 'account-uuid-1', 75000)
+      ).resolves.toBeUndefined();
     });
   });
 });

@@ -73,6 +73,33 @@ export class PaymentController {
         carrier: req.body.carrier,
         description: req.body.description,
       });
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async respondToRequest(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await paymentService.respondToRequest(
+        req.user!.id,
+        req.params.id,
+        req.body.action
+      );
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getPaymentRequests(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { page, limit } = req.query;
+      const result = await paymentService.getPaymentRequests(
+        req.user!.id,
+        Number(page) || 1,
+        Number(limit) || 20
+      );
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);

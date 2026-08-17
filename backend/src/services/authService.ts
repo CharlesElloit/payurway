@@ -18,35 +18,23 @@ const SALT_ROUNDS = 12;
 
 export class AuthService {
   async register(data: {
-    email: string;
     phone: string;
     password: string;
-    firstName: string;
-    lastName: string;
   }) {
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [{ email: data.email }, { phone: data.phone }],
-      },
+    const existingUser = await prisma.user.findUnique({
+      where: { phone: data.phone },
     });
 
     if (existingUser) {
-      throw new ConflictError(
-        existingUser.email === data.email
-          ? 'Email already registered'
-          : 'Phone number already registered'
-      );
+      throw new ConflictError('Phone number already registered');
     }
 
     const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
 
     const user = await prisma.user.create({
       data: {
-        email: data.email,
         phone: data.phone,
         passwordHash,
-        firstName: data.firstName,
-        lastName: data.lastName,
       },
     });
 
@@ -66,8 +54,8 @@ export class AuthService {
     };
   }
 
-  async login(email: string, password: string, userAgent?: string, ipAddress?: string) {
-    const user = await prisma.user.findUnique({ where: { email } });
+  async login(phone: string, password: string, userAgent?: string, ipAddress?: string) {
+    const user = await prisma.user.findUnique({ where: { phone } });
 
     if (!user || !user.isActive) {
       throw new UnauthorizedError('Invalid credentials');
@@ -230,7 +218,15 @@ export class AuthService {
     return this.sanitizeUser(user);
   }
 
-  async updateProfile(userId: string, data: { firstName?: string; lastName?: string }) {
+  async updateProfile(userId: string, data: { firstName?: string; lastName?: string; email?: string }) {
+    if (data.email) {
+      const existing = await prisma.user.findFirst({
+        where: { email: data.email, NOT: { id: userId } },
+      });
+      if (existing) {
+        throw new ConflictError('Email already in use');
+      }
+    }
     const user = await prisma.user.update({
       where: { id: userId },
       data,
@@ -256,8 +252,8 @@ export class AuthService {
     return { message: 'Password changed successfully. Please log in again.' };
   }
 
-  private async generateTokens(userId: string, email: string, phone: string) {
-    const payload: AuthUser = { id: userId, email, phone };
+  private async generateTokens(userId: string, email: string | null | undefined, phone: string) {
+    const payload: AuthUser = { id: userId, email: email || undefined, phone };
 
     const accessToken = jwt.sign(payload, config.jwt.secret, {
       expiresIn: config.jwt.expiry as any,

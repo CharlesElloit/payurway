@@ -143,4 +143,32 @@ export class AirtelGateway implements CarrierGateway {
       throw new CarrierError('airtel', error.response?.data?.status?.message || error.message);
     }
   }
+
+  async getBalance(phoneNumber: string): Promise<{ balance: number; currency: string }> {
+    try {
+      const token = await this.getAccessToken();
+
+      const response = await axios.get(
+        `${this.apiUrl}/standard/v1/user/balance`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Country': 'UG',
+            'X-Currency': 'UGX',
+          },
+          params: {
+            MSISDN: phoneNumber,
+          },
+        }
+      );
+
+      return {
+        balance: parseFloat(response.data.data?.balance || '0'),
+        currency: response.data.data?.currency || 'UGX',
+      };
+    } catch (error: any) {
+      logger.warn({ error: error.response?.data, phoneNumber }, 'Airtel balance check failed');
+      throw new CarrierError('airtel', error.response?.data?.status?.message || 'Failed to fetch balance');
+    }
+  }
 }

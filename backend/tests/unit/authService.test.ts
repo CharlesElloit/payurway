@@ -13,65 +13,42 @@ beforeEach(() => {
 describe('AuthService', () => {
   describe('register', () => {
     it('should register a new user successfully', async () => {
-      prismaMock.user.findFirst.mockResolvedValue(null);
+      prismaMock.user.findUnique.mockResolvedValue(null);
       prismaMock.user.create.mockResolvedValue(mockUser as any);
 
       const result = await authService.register({
-        email: 'test@example.com',
         phone: '+256771234567',
         password: 'password123',
-        firstName: 'John',
-        lastName: 'Doe',
       });
 
       expect(result.user).toBeDefined();
       expect(result.accessToken).toBeDefined();
       expect(result.refreshToken).toBeDefined();
       expect(result.otpSent).toBe(true);
-      expect(result.user.email).toBe('test@example.com');
+      expect(result.user.phone).toBe('+256771234567');
       expect(result.user).not.toHaveProperty('passwordHash');
       expect(prismaMock.user.create).toHaveBeenCalledTimes(1);
       expect(redisMock.setex).toHaveBeenCalled();
     });
 
-    it('should throw ConflictError if email already exists', async () => {
-      prismaMock.user.findFirst.mockResolvedValue(mockUser as any);
-
-      await expect(
-        authService.register({
-          email: 'test@example.com',
-          phone: '+256701234567',
-          password: 'password123',
-          firstName: 'John',
-          lastName: 'Doe',
-        })
-      ).rejects.toThrow(ConflictError);
-    });
-
     it('should throw ConflictError if phone already exists', async () => {
-      prismaMock.user.findFirst.mockResolvedValue(mockUser as any);
+      prismaMock.user.findUnique.mockResolvedValue(mockUser as any);
 
       await expect(
         authService.register({
-          email: 'new@example.com',
           phone: '+256771234567',
           password: 'password123',
-          firstName: 'John',
-          lastName: 'Doe',
         })
       ).rejects.toThrow(ConflictError);
     });
 
     it('should hash the password before storing', async () => {
-      prismaMock.user.findFirst.mockResolvedValue(null);
+      prismaMock.user.findUnique.mockResolvedValue(null);
       prismaMock.user.create.mockResolvedValue(mockUser as any);
 
       await authService.register({
-        email: 'test@example.com',
         phone: '+256771234567',
         password: 'password123',
-        firstName: 'John',
-        lastName: 'Doe',
       });
 
       const createCall = prismaMock.user.create.mock.calls[0][0];
@@ -82,15 +59,12 @@ describe('AuthService', () => {
     });
 
     it('should store OTP in redis', async () => {
-      prismaMock.user.findFirst.mockResolvedValue(null);
+      prismaMock.user.findUnique.mockResolvedValue(null);
       prismaMock.user.create.mockResolvedValue(mockUser as any);
 
       await authService.register({
-        email: 'test@example.com',
         phone: '+256771234567',
         password: 'password123',
-        firstName: 'John',
-        lastName: 'Doe',
       });
 
       expect(redisMock.setex).toHaveBeenCalledWith(
@@ -108,18 +82,18 @@ describe('AuthService', () => {
       prismaMock.user.findUnique.mockResolvedValue(userWithHash as any);
       prismaMock.user.update.mockResolvedValue(userWithHash as any);
 
-      const result = await authService.login('test@example.com', 'password123');
+      const result = await authService.login('+256771234567', 'password123');
 
       expect(result.accessToken).toBeDefined();
       expect(result.refreshToken).toBeDefined();
-      expect(result.user.email).toBe('test@example.com');
+      expect(result.user.phone).toBe('+256771234567');
     });
 
-    it('should throw UnauthorizedError for wrong email', async () => {
+    it('should throw UnauthorizedError for wrong phone', async () => {
       prismaMock.user.findUnique.mockResolvedValue(null);
 
       await expect(
-        authService.login('wrong@example.com', 'password123')
+        authService.login('+25600000000', 'password123')
       ).rejects.toThrow(UnauthorizedError);
     });
 
@@ -129,7 +103,7 @@ describe('AuthService', () => {
       prismaMock.user.findUnique.mockResolvedValue(userWithHash as any);
 
       await expect(
-        authService.login('test@example.com', 'wrongpassword')
+        authService.login('+256771234567', 'wrongpassword')
       ).rejects.toThrow(UnauthorizedError);
     });
 
@@ -138,7 +112,7 @@ describe('AuthService', () => {
       prismaMock.user.findUnique.mockResolvedValue(inactiveUser as any);
 
       await expect(
-        authService.login('test@example.com', 'password123')
+        authService.login('+256771234567', 'password123')
       ).rejects.toThrow(UnauthorizedError);
     });
 
@@ -147,7 +121,7 @@ describe('AuthService', () => {
       const userWithHash = { ...mockUnverifiedUser, passwordHash: hashedPassword };
       prismaMock.user.findUnique.mockResolvedValue(userWithHash as any);
 
-      const result = await authService.login('test@example.com', 'password123');
+      const result = await authService.login('+256771234567', 'password123');
 
       expect(result.requiresVerification).toBe(true);
       expect(result.accessToken).toBeNull();
@@ -162,7 +136,7 @@ describe('AuthService', () => {
       prismaMock.user.update.mockResolvedValue(userWithHash as any);
       prismaMock.refreshToken.create.mockResolvedValue(mockRefreshToken as any);
 
-      await authService.login('test@example.com', 'password123', 'test-agent', '127.0.0.1');
+      await authService.login('+256771234567', 'password123', 'test-agent', '127.0.0.1');
 
       expect(prismaMock.refreshToken.create).toHaveBeenCalledTimes(1);
     });
@@ -173,7 +147,7 @@ describe('AuthService', () => {
       prismaMock.user.findUnique.mockResolvedValue(userWithHash as any);
       prismaMock.user.update.mockResolvedValue(userWithHash as any);
 
-      await authService.login('test@example.com', 'password123');
+      await authService.login('+256771234567', 'password123');
 
       expect(prismaMock.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -323,7 +297,7 @@ describe('AuthService', () => {
 
       const result = await authService.getProfile('user-uuid-1');
 
-      expect(result.email).toBe('test@example.com');
+      expect(result.phone).toBe('+256771234567');
       expect(result).not.toHaveProperty('passwordHash');
     });
 
@@ -335,13 +309,31 @@ describe('AuthService', () => {
   });
 
   describe('updateProfile', () => {
-    it('should update user profile', async () => {
+    it('should update user profile with firstName', async () => {
       const updatedUser = { ...mockUser, firstName: 'Jane' };
       prismaMock.user.update.mockResolvedValue(updatedUser as any);
 
       const result = await authService.updateProfile('user-uuid-1', { firstName: 'Jane' });
 
       expect(result.firstName).toBe('Jane');
+    });
+
+    it('should update user profile with email', async () => {
+      prismaMock.user.findFirst.mockResolvedValue(null);
+      const updatedUser = { ...mockUser, email: 'new@example.com' };
+      prismaMock.user.update.mockResolvedValue(updatedUser as any);
+
+      const result = await authService.updateProfile('user-uuid-1', { email: 'new@example.com' });
+
+      expect(result.email).toBe('new@example.com');
+    });
+
+    it('should throw ConflictError if email already in use', async () => {
+      prismaMock.user.findFirst.mockResolvedValue({ id: 'other-user', email: 'taken@example.com' } as any);
+
+      await expect(
+        authService.updateProfile('user-uuid-1', { email: 'taken@example.com' })
+      ).rejects.toThrow(ConflictError);
     });
   });
 

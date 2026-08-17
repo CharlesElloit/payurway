@@ -2,7 +2,7 @@ import { Request } from 'express';
 
 export interface AuthUser {
   id: string;
-  email: string;
+  email?: string;
   phone: string;
 }
 
@@ -12,7 +12,7 @@ export interface AuthenticatedRequest extends Request {
 
 export type Carrier = 'mtn' | 'airtel';
 
-export type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'expired';
+export type PaymentStatus = 'pending' | 'processing' | 'requested' | 'completed' | 'failed' | 'cancelled' | 'expired';
 
 export type AccountVerificationStatus = 'pending' | 'verified' | 'failed';
 
@@ -52,7 +52,6 @@ export interface QRCodeData {
   receiverId: string;
   receiverName: string;
   receiverPhone: string;
-  amount?: number;
   carrier: Carrier;
   currency: string;
   createdAt: string;

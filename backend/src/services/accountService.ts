@@ -1,8 +1,9 @@
 import prisma from '../config/database';
 import { Carrier } from '../types';
 import { normalizePhoneNumber, detectCarrier, generateOTP } from '../utils/helpers';
-import { BadRequestError, NotFoundError, ConflictError } from '../utils/errors';
+import { BadRequestError, NotFoundError, ConflictError, CarrierError } from '../utils/errors';
 import { redis } from '../config/redis';
+import { carrierGatewayFactory } from './carrierGateway';
 import logger from '../utils/logger';
 
 export class AccountService {
@@ -193,6 +194,86 @@ export class AccountService {
     }
 
     return account;
+  }
+
+  async getBalance(userId: string, accountId: string) {
+    const account = await prisma.mobileMoneyAccount.findFirst({
+      where: { id: accountId, userId, isActive: true, verificationStatus: 'verified' },
+    });
+
+    if (!account) throw new NotFoundError('Verified account not found');
+
+    if (account.balance !== null && account.balanceUpdatedAt) {
+      const age = Date.now() - account.balanceUpdatedAt.getTime();
+      if (age < 5 * 60 * 1000) {
+        return {
+          accountId: account.id,
+          phoneNumber: account.phoneNumber,
+          carrier: account.carrier,
+          balance: Number(account.balance),
+          currency: 'UGX',
+          lastUpdated: account.balanceUpdatedAt,
+          fresh: false,
+        };
+      }
+    }
+
+    try {
+      return await this.refreshBalance(userId, accountId);
+    } catch {
+      return {
+        accountId: account.id,
+        phoneNumber: account.phoneNumber,
+        carrier: account.carrier,
+        balance: account.balance ? Number(account.balance) : null,
+        currency: 'UGX',
+        lastUpdated: account.balanceUpdatedAt,
+        fresh: false,
+      };
+    }
+  }
+
+  async refreshBalance(userId: string, accountId: string) {
+    const account = await prisma.mobileMoneyAccount.findFirst({
+      where: { id: accountId, userId, isActive: true, verificationStatus: 'verified' },
+    });
+
+    if (!account) throw new NotFoundError('Verified account not found');
+
+    const gateway = carrierGatewayFactory(account.carrier as Carrier);
+    const result = await gateway.getBalance(account.phoneNumber);
+
+    const updated = await prisma.mobileMoneyAccount.update({
+      where: { id: accountId },
+      data: {
+        balance: result.balance,
+        balanceUpdatedAt: new Date(),
+      },
+    });
+
+    logger.info({ userId, accountId, balance: result.balance }, 'Account balance refreshed');
+
+    return {
+      accountId: updated.id,
+      phoneNumber: updated.phoneNumber,
+      carrier: updated.carrier,
+      balance: result.balance,
+      currency: result.currency,
+      lastUpdated: updated.balanceUpdatedAt,
+      fresh: true,
+    };
+  }
+
+  async updateAccountBalance(userId: string, accountId: string, balance: number) {
+    await prisma.mobileMoneyAccount.update({
+      where: { id: accountId },
+      data: {
+        balance,
+        balanceUpdatedAt: new Date(),
+      },
+    }).catch((err) => {
+      logger.warn({ accountId, error: err.message }, 'Failed to update account balance after transaction');
+    });
   }
 }
 

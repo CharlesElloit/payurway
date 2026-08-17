@@ -15,6 +15,20 @@ jest.mock('qrcode', () => ({
   },
 }));
 
+jest.mock('../../src/services/paymentService', () => ({
+  paymentService: {
+    initiatePayment: jest.fn().mockResolvedValue({
+      id: 'payment-new-1',
+      reference: 'PMB-NEW-001',
+      amount: 25000,
+      currency: 'UGX',
+      status: 'pending',
+      carrier: 'mtn',
+      createdAt: new Date(),
+    }),
+  },
+}));
+
 describe('QRCodeService', () => {
   describe('generateQRCode', () => {
     it('should generate a QR code for a verified MTN account', async () => {
@@ -27,31 +41,14 @@ describe('QRCodeService', () => {
       prismaMock.qRCode.create.mockResolvedValue(mockQRCode as any);
 
       const result = await qrCodeService.generateQRCode('user-uuid-1', {
-        amount: 50000,
         carrier: 'mtn',
       });
 
       expect(result.id).toBeDefined();
       expect(result.qrImage).toBeDefined();
-      expect(result.qrData.amount).toBe(50000);
       expect(result.qrData.carrier).toBe('mtn');
+      expect(result.qrData).not.toHaveProperty('amount');
       expect(redisMock.setex).toHaveBeenCalled();
-    });
-
-    it('should generate QR code without fixed amount', async () => {
-      prismaMock.user.findUnique.mockResolvedValue(mockUser as any);
-      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue({
-        id: 'account-uuid-1',
-        phoneNumber: '+256771234567',
-        carrier: 'mtn',
-      } as any);
-      prismaMock.qRCode.create.mockResolvedValue(mockQRCode as any);
-
-      const result = await qrCodeService.generateQRCode('user-uuid-1', {
-        carrier: 'mtn',
-      });
-
-      expect(result.qrData.amount).toBeUndefined();
     });
 
     it('should throw NotFoundError if user not found', async () => {
@@ -79,7 +76,6 @@ describe('QRCodeService', () => {
         receiverId: 'user-uuid-1',
         receiverName: 'John Doe',
         receiverPhone: '+256771234567',
-        amount: 50000,
         carrier: 'mtn',
         currency: 'UGX',
         createdAt: new Date().toISOString(),
@@ -90,18 +86,20 @@ describe('QRCodeService', () => {
       const result = await qrCodeService.getQRCode('qr-uuid-1');
 
       expect(result.id).toBe('qr-uuid-1');
+      expect(result).not.toHaveProperty('amount');
       expect(prismaMock.qRCode.findUnique).not.toHaveBeenCalled();
     });
 
     it('should fetch from database if not cached', async () => {
       redisMock.get.mockResolvedValue(null);
-      prismaMock.qRCode.findUnique.mockResolvedValue(mockQRCode as any);
+      prismaMock.qRCode.findUnique.mockResolvedValue({ ...mockQRCode, amount: null } as any);
       prismaMock.user.findUnique.mockResolvedValue(mockUser as any);
 
       const result = await qrCodeService.getQRCode('qr-uuid-1');
 
       expect(result.id).toBe('qr-uuid-1');
       expect(result.receiverName).toBe('John Doe');
+      expect(result).not.toHaveProperty('amount');
     });
 
     it('should throw NotFoundError for unknown QR code', async () => {
@@ -113,7 +111,7 @@ describe('QRCodeService', () => {
 
     it('should throw BadRequestError for expired QR code', async () => {
       redisMock.get.mockResolvedValue(null);
-      const expiredQR = { ...mockQRCode, expiresAt: new Date(Date.now() - 1000) };
+      const expiredQR = { ...mockQRCode, amount: null, expiresAt: new Date(Date.now() - 1000) };
       prismaMock.qRCode.findUnique.mockResolvedValue(expiredQR as any);
 
       await expect(qrCodeService.getQRCode('qr-uuid-1')).rejects.toThrow(BadRequestError);
@@ -121,7 +119,7 @@ describe('QRCodeService', () => {
 
     it('should throw BadRequestError for used one-time QR code', async () => {
       redisMock.get.mockResolvedValue(null);
-      const usedQR = { ...mockQRCode, isOneTime: true, isUsed: true };
+      const usedQR = { ...mockQRCode, amount: null, isOneTime: true, isUsed: true };
       prismaMock.qRCode.findUnique.mockResolvedValue(usedQR as any);
 
       await expect(qrCodeService.getQRCode('qr-uuid-1')).rejects.toThrow(BadRequestError);
@@ -129,7 +127,7 @@ describe('QRCodeService', () => {
 
     it('should throw NotFoundError for deactivated QR code', async () => {
       redisMock.get.mockResolvedValue(null);
-      const inactiveQR = { ...mockQRCode, isActive: false };
+      const inactiveQR = { ...mockQRCode, amount: null, isActive: false };
       prismaMock.qRCode.findUnique.mockResolvedValue(inactiveQR as any);
 
       await expect(qrCodeService.getQRCode('qr-uuid-1')).rejects.toThrow(NotFoundError);
@@ -137,37 +135,39 @@ describe('QRCodeService', () => {
   });
 
   describe('validateAndConsumeQRCode', () => {
-    it('should validate and consume a one-time QR code', async () => {
+    it('should validate, consume, and initiate payment', async () => {
+      const { signQRCodeData } = require('../../src/utils/helpers');
       const expiresAt = new Date(Date.now() + 600000);
-      const qrData = {
+      const payloadForSig = {
         id: 'qr-uuid-1',
-        receiverId: 'user-uuid-1',
-        receiverPhone: '+256771234567',
+        userId: 'user-uuid-1',
+        phone: '+256771234567',
         carrier: 'mtn',
-        amount: 50000,
         expiresAt: expiresAt.toISOString(),
       };
 
-      const signature = signQRCodeData(JSON.stringify({
-        id: qrData.id,
-        userId: qrData.receiverId,
-        phone: qrData.receiverPhone,
-        carrier: qrData.carrier,
-        amount: qrData.amount,
-        expiresAt: qrData.expiresAt,
-      }));
+      const signature = signQRCodeData(JSON.stringify(payloadForSig));
 
-      redisMock.get.mockResolvedValue(JSON.stringify({ ...qrData, receiverName: 'John Doe', currency: 'UGX', createdAt: new Date().toISOString() }));
+      redisMock.get.mockResolvedValue(JSON.stringify({ ...payloadForSig, receiverId: 'user-uuid-1', receiverPhone: '+256771234567', receiverName: 'John Doe', currency: 'UGX', createdAt: new Date().toISOString() }));
       redisMock.del.mockResolvedValue(1);
 
-      const freshQR = { ...mockQRCode, isOneTime: true, isUsed: false };
+      const freshQR = { ...mockQRCode, amount: null, isOneTime: true, isUsed: false };
       prismaMock.qRCode.findUnique.mockResolvedValue(freshQR as any);
       prismaMock.user.findUnique.mockResolvedValue(mockUser as any);
       prismaMock.qRCode.update.mockResolvedValue({ ...freshQR, isUsed: true } as any);
 
-      const result = await qrCodeService.validateAndConsumeQRCode('qr-uuid-1', signature);
+      const result = await qrCodeService.validateAndConsumeQRCode(
+        'qr-uuid-1',
+        signature,
+        25000,
+        '+256799999999',
+        'user-uuid-3',
+        'Lunch money'
+      );
 
-      expect(result.id).toBe('qr-uuid-1');
+      expect(result.qrData.id).toBe('qr-uuid-1');
+      expect(result.payment).toBeDefined();
+      expect(result.payment.amount).toBe(25000);
       expect(prismaMock.qRCode.update).toHaveBeenCalled();
     });
 
@@ -177,7 +177,6 @@ describe('QRCodeService', () => {
         receiverId: 'user-uuid-1',
         receiverPhone: '+256771234567',
         carrier: 'mtn',
-        amount: 50000,
         expiresAt: new Date(Date.now() + 600000).toISOString(),
         receiverName: 'John Doe',
         currency: 'UGX',
@@ -186,7 +185,7 @@ describe('QRCodeService', () => {
       redisMock.get.mockResolvedValue(JSON.stringify(cachedData));
 
       await expect(
-        qrCodeService.validateAndConsumeQRCode('qr-uuid-1', 'invalid-signature')
+        qrCodeService.validateAndConsumeQRCode('qr-uuid-1', 'invalid-signature', 25000, '+256799999999')
       ).rejects.toThrow(BadRequestError);
     });
   });

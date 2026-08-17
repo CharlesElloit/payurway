@@ -23,8 +23,15 @@ export class QRCodeController {
 
   async scanQRCode(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { qrCodeId, signature } = req.body;
-      const result = await qrCodeService.validateAndConsumeQRCode(qrCodeId, signature);
+      const { qrCodeId, signature, amount, senderPhone, description } = req.body;
+      const result = await qrCodeService.validateAndConsumeQRCode(
+        qrCodeId,
+        signature,
+        amount,
+        senderPhone,
+        req.user?.id,
+        description
+      );
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);

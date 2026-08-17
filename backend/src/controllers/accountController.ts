@@ -58,6 +58,24 @@ export class AccountController {
       next(error);
     }
   }
+
+  async getBalance(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await accountService.getBalance(req.user!.id, req.params.id);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async refreshBalance(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await accountService.refreshBalance(req.user!.id, req.params.id);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const accountController = new AccountController();

@@ -4,6 +4,7 @@ import { Carrier, PaymentStatus } from '../types';
 import { generateTransactionReference } from '../utils/helpers';
 import { carrierGatewayFactory } from './carrierGateway';
 import { notificationService } from './notificationService';
+import { accountService } from './accountService';
 import { NotFoundError, BadRequestError, ForbiddenError, CarrierError } from '../utils/errors';
 import logger from '../utils/logger';
 
@@ -258,20 +259,129 @@ export class PaymentService {
     const requester = await prisma.user.findUnique({ where: { id: data.requesterId } });
     if (!requester) throw new NotFoundError('User not found');
 
+    const targetUser = await prisma.user.findUnique({ where: { phone: data.targetPhone } });
+    if (!targetUser) throw new NotFoundError('No user found with this phone number');
+
     const reference = generateTransactionReference();
 
-    await notificationService.createNotification(data.requesterId, {
-      type: 'payment_requested',
-      title: 'Payment Request Sent',
-      body: `Payment request of UGX ${data.amount.toLocaleString()} sent to ${data.targetPhone}`,
-      data: { reference, amount: data.amount, targetPhone: data.targetPhone },
+    const payment = await prisma.payment.create({
+      data: {
+        reference,
+        amount: data.amount,
+        currency: 'UGX',
+        description: data.description || null,
+        status: 'requested',
+        senderPhone: data.targetPhone,
+        receiverPhone: requester.phone,
+        senderId: targetUser.id,
+        receiverId: data.requesterId,
+        carrier: data.carrier,
+      },
     });
 
+    await notificationService.createNotification(targetUser.id, {
+      type: 'payment_requested',
+      title: 'Payment Request',
+      body: `${requester.firstName || requester.phone} is requesting UGX ${data.amount.toLocaleString()}`,
+      data: {
+        paymentId: payment.id,
+        reference: payment.reference,
+        amount: data.amount,
+        requesterPhone: requester.phone,
+        carrier: data.carrier,
+      },
+    });
+
+    logger.info({ paymentId: payment.id, reference, requesterId: data.requesterId, targetUserId: targetUser.id }, 'Payment request created');
+
     return {
-      reference,
-      amount: data.amount,
+      id: payment.id,
+      reference: payment.reference,
+      amount: payment.amount,
       targetPhone: data.targetPhone,
-      message: 'Payment request notification sent',
+      status: payment.status,
+      message: 'Payment request sent',
+    };
+  }
+
+  async respondToRequest(userId: string, paymentId: string, action: 'accept' | 'reject') {
+    const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundError('Payment request not found');
+
+    if (payment.senderId !== userId) {
+      throw new ForbiddenError('Only the payer can respond to this request');
+    }
+
+    if (payment.status !== 'requested') {
+      throw new BadRequestError(`Cannot ${action} a request in ${payment.status} status`);
+    }
+
+    if (action === 'reject') {
+      await prisma.payment.update({
+        where: { id: paymentId },
+        data: { status: 'cancelled' },
+      });
+
+      if (payment.receiverId) {
+        await notificationService.createNotification(payment.receiverId, {
+          type: 'payment_failed',
+          title: 'Payment Request Declined',
+          body: `Your payment request of UGX ${Number(payment.amount).toLocaleString()} was declined`,
+          data: { paymentId, reference: payment.reference },
+        });
+      }
+
+      return { message: 'Payment request rejected' };
+    }
+
+    await prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: 'pending' },
+    });
+
+    this.processPaymentAsync(paymentId).catch((err) => {
+      logger.error({ paymentId, err }, 'Async payment processing failed');
+    });
+
+    if (payment.receiverId) {
+      await notificationService.createNotification(payment.receiverId, {
+        type: 'payment_sent',
+        title: 'Payment Request Accepted',
+        body: `Payment of UGX ${Number(payment.amount).toLocaleString()} is being processed`,
+        data: { paymentId, reference: payment.reference, amount: Number(payment.amount) },
+      });
+    }
+
+    return { message: 'Payment accepted and processing', paymentId };
+  }
+
+  async getPaymentRequests(userId: string, page = 1, limit = 20) {
+    const skip = (Math.max(1, page) - 1) * Math.min(100, Math.max(1, limit));
+    const take = Math.min(100, Math.max(1, limit));
+
+    const where = {
+      senderId: userId,
+      status: 'requested' as const,
+    };
+
+    const [payments, total] = await Promise.all([
+      prisma.payment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      prisma.payment.count({ where }),
+    ]);
+
+    return {
+      data: payments.map((p) => this.formatPayment(p)),
+      meta: {
+        total,
+        page,
+        limit: take,
+        totalPages: Math.ceil(total / take),
+      },
     };
   }
 
@@ -291,6 +401,10 @@ export class PaymentService {
           currency: payment.currency,
         },
       });
+
+      this.refreshLinkedBalance(payment.receiverId, payment.receiverPhone, Number(payment.amount), 'credit').catch((err) => {
+        logger.warn({ paymentId, userId: payment.receiverId, error: err.message }, 'Failed to refresh receiver balance');
+      });
     }
 
     if (payment.senderId) {
@@ -305,9 +419,33 @@ export class PaymentService {
           currency: payment.currency,
         },
       });
+
+      this.refreshLinkedBalance(payment.senderId, payment.senderPhone, Number(payment.amount), 'debit').catch((err) => {
+        logger.warn({ paymentId, userId: payment.senderId, error: err.message }, 'Failed to refresh sender balance');
+      });
     }
 
     logger.info({ paymentId, reference: payment.reference }, 'Payment completed');
+  }
+
+  private async refreshLinkedBalance(userId: string, phone: string, amount: number, type: 'credit' | 'debit') {
+    const account = await prisma.mobileMoneyAccount.findFirst({
+      where: { userId, phoneNumber: phone, isActive: true, verificationStatus: 'verified' },
+    });
+
+    if (!account) {
+      logger.debug({ userId, phone }, 'No linked account found for balance update');
+      return;
+    }
+
+    try {
+      await accountService.refreshBalance(userId, account.id);
+    } catch {
+      const adjustment = type === 'credit' ? amount : -amount;
+      const newBalance = (account.balance ? Number(account.balance) : 0) + adjustment;
+      await accountService.updateAccountBalance(userId, account.id, Math.max(0, newBalance));
+      logger.info({ accountId: account.id, adjustment, newBalance }, 'Balance adjusted locally after transaction');
+    }
   }
 
   private async onPaymentFailed(paymentId: string, reason: string) {

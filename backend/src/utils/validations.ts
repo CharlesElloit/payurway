@@ -1,9 +1,6 @@
 import Joi from 'joi';
 
 export const registerSchema = Joi.object({
-  email: Joi.string().email().required().messages({
-    'string.email': 'Please provide a valid email address',
-  }),
   phone: Joi.string()
     .pattern(/^\+?[0-9]{10,15}$/)
     .required()
@@ -13,12 +10,10 @@ export const registerSchema = Joi.object({
   password: Joi.string().min(8).max(128).required().messages({
     'string.min': 'Password must be at least 8 characters',
   }),
-  firstName: Joi.string().min(1).max(50).required(),
-  lastName: Joi.string().min(1).max(50).required(),
 });
 
 export const loginSchema = Joi.object({
-  email: Joi.string().email().required(),
+  phone: Joi.string().required(),
   password: Joi.string().required(),
 });
 
@@ -43,6 +38,7 @@ export const changePasswordSchema = Joi.object({
 export const updateProfileSchema = Joi.object({
   firstName: Joi.string().min(1).max(50),
   lastName: Joi.string().min(1).max(50),
+  email: Joi.string().email(),
 }).min(1);
 
 export const linkAccountSchema = Joi.object({
@@ -58,10 +54,8 @@ export const verifyAccountSchema = Joi.object({
 });
 
 export const generateQRCodeSchema = Joi.object({
-  amount: Joi.number().positive().optional(),
   carrier: Joi.string().valid('mtn', 'airtel').required(),
   currency: Joi.string().length(3).optional().default('UGX'),
-  description: Joi.string().max(255).optional(),
 });
 
 export const initiatePaymentSchema = Joi.object({
@@ -82,6 +76,11 @@ export const initiatePaymentSchema = Joi.object({
 export const scanQRCodeSchema = Joi.object({
   qrCodeId: Joi.string().uuid().required(),
   signature: Joi.string().required(),
+  amount: Joi.number().positive().required(),
+  senderPhone: Joi.string()
+    .pattern(/^\+?[0-9]{10,15}$/)
+    .required(),
+  description: Joi.string().max(255).optional(),
 });
 
 export const requestPaymentSchema = Joi.object({
@@ -93,11 +92,15 @@ export const requestPaymentSchema = Joi.object({
   description: Joi.string().max(255).optional(),
 });
 
+export const respondPaymentRequestSchema = Joi.object({
+  action: Joi.string().valid('accept', 'reject').required(),
+});
+
 export const paymentQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).optional().default(1),
   limit: Joi.number().integer().min(1).max(100).optional().default(20),
   status: Joi.string()
-    .valid('pending', 'processing', 'completed', 'failed', 'cancelled', 'expired')
+    .valid('pending', 'processing', 'requested', 'completed', 'failed', 'cancelled', 'expired')
     .optional(),
 });
 

@@ -146,4 +146,29 @@ export class MTNGateway implements CarrierGateway {
       throw new CarrierError('mtn', error.response?.data?.message || error.message);
     }
   }
+
+  async getBalance(phoneNumber: string): Promise<{ balance: number; currency: string }> {
+    try {
+      const token = await this.getAccessToken();
+
+      const response = await axios.get(
+        `${this.apiUrl}/disbursement/v1_0/account/${phoneNumber}/balance`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Target-Environment': this.environment,
+            'Ocp-Apim-Subscription-Key': this.subscriptionKey,
+          },
+        }
+      );
+
+      return {
+        balance: parseFloat(response.data.availableBalance || '0'),
+        currency: response.data.currency || 'UGX',
+      };
+    } catch (error: any) {
+      logger.warn({ error: error.response?.data, phoneNumber }, 'MTN balance check failed');
+      throw new CarrierError('mtn', error.response?.data?.message || 'Failed to fetch balance');
+    }
+  }
 }

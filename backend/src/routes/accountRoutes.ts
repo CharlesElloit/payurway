@@ -15,5 +15,7 @@ router.get('/', accountController.getAccounts);
 router.get('/:id', validate(Joi.object({ id: Joi.string().uuid().required() }), 'params'), accountController.getAccount);
 router.delete('/:id', validate(Joi.object({ id: Joi.string().uuid().required() }), 'params'), accountController.removeAccount);
 router.patch('/:id/default', validate(Joi.object({ id: Joi.string().uuid().required() }), 'params'), accountController.setDefault);
+router.get('/:id/balance', validate(Joi.object({ id: Joi.string().uuid().required() }), 'params'), accountController.getBalance);
+router.post('/:id/balance/refresh', validate(Joi.object({ id: Joi.string().uuid().required() }), 'params'), accountController.refreshBalance);
 
 export default router;
