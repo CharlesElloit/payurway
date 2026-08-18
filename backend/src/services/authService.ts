@@ -42,7 +42,6 @@ export class AuthService {
 
     const otp = generateOTP();
     await this.storeOTP(user.phone, otp);
-    await this.sendOTP(user.phone, otp);
 
     logger.info({ userId: user.id }, 'User registered');
 
@@ -50,7 +49,7 @@ export class AuthService {
       user: this.sanitizeUser(user),
       accessToken,
       refreshToken,
-      otpSent: true,
+      otp,
     };
   }
 
@@ -69,13 +68,13 @@ export class AuthService {
     if (!user.isVerified) {
       const otp = generateOTP();
       await this.storeOTP(user.phone, otp);
-      await this.sendOTP(user.phone, otp);
       return {
         user: this.sanitizeUser(user),
         accessToken: null,
         refreshToken: null,
         requiresVerification: true,
-        message: 'Account not verified. OTP sent to your phone.',
+        otp,
+        message: 'Account not verified. Please verify with the OTP.',
       };
     }
 
@@ -136,10 +135,20 @@ export class AuthService {
     }
 
     if (!user.isVerified) {
-      await prisma.user.update({
+      const updated = await prisma.user.update({
         where: { id: user.id },
         data: { isVerified: true },
       });
+
+      const { accessToken, refreshToken } = await this.generateTokens(updated.id, updated.email, updated.phone);
+
+      logger.info({ userId: user.id }, 'OTP verified');
+
+      return {
+        user: this.sanitizeUser(updated),
+        accessToken,
+        refreshToken,
+      };
     }
 
     const { accessToken, refreshToken } = await this.generateTokens(user.id, user.email, user.phone);
@@ -170,9 +179,8 @@ export class AuthService {
 
     const otp = generateOTP();
     await this.storeOTP(phone, otp);
-    await this.sendOTP(phone, otp);
 
-    return { message: 'OTP sent successfully' };
+    return { message: 'OTP sent successfully', otp };
   }
 
   async refreshToken(token: string) {

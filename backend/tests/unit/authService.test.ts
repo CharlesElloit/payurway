@@ -24,7 +24,8 @@ describe('AuthService', () => {
       expect(result.user).toBeDefined();
       expect(result.accessToken).toBeDefined();
       expect(result.refreshToken).toBeDefined();
-      expect(result.otpSent).toBe(true);
+      expect(result.otp).toBeDefined();
+      expect(typeof result.otp).toBe('string');
       expect(result.user.phone).toBe('+256771234567');
       expect(result.user).not.toHaveProperty('passwordHash');
       expect(prismaMock.user.create).toHaveBeenCalledTimes(1);

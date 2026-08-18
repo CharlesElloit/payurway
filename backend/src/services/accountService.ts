@@ -48,6 +48,7 @@ export class AccountService {
       phoneNumber: account.phoneNumber,
       carrier: account.carrier,
       verificationStatus: account.verificationStatus,
+      verificationToken: verifyToken,
       message: 'Verification OTP sent to your mobile money number',
     };
   }
