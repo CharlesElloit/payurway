@@ -53,7 +53,7 @@ model MobileMoneyAccount {
   carrier           Carrier
   carrierAccountId  String?   @map("carrier_account_id")
   verificationStatus AccountVerificationStatus @default(pending) @map("verification_status")
-  verificationToken String?   @map("verification_token")
+  encryptedPin      String?   @map("encrypted_pin") @db.Text
   balance           Decimal?  @db.Decimal(12, 2)
   balanceUpdatedAt  DateTime? @map("balance_updated_at")
   isDefault         Boolean   @default(false) @map("is_default")

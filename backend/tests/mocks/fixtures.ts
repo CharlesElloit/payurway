@@ -26,7 +26,7 @@ export const mockAccount = {
   carrier: 'mtn' as const,
   carrierAccountId: null,
   verificationStatus: 'verified' as const,
-  verificationToken: null,
+  encryptedPin: null,
   isDefault: true,
   isActive: true,
   verifiedAt: new Date('2024-01-01'),
@@ -38,7 +38,7 @@ export const mockPendingAccount = {
   ...mockAccount,
   id: 'account-uuid-2',
   verificationStatus: 'pending' as const,
-  verificationToken: '123456',
+  encryptedPin: null,
   verifiedAt: null,
 };
 

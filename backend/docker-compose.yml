@@ -57,6 +57,12 @@ services:
       AIRTEL_CLIENT_ID: ${AIRTEL_CLIENT_ID:-}
       AIRTEL_CLIENT_SECRET: ${AIRTEL_CLIENT_SECRET:-}
       AIRTEL_CALLBACK_URL: ${AIRTEL_CALLBACK_URL:-http://localhost:3000/api/v1/webhooks/airtel}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      LOG_DIR: /app/logs
+      LOG_LEVEL: info
+    volumes:
+      - logs_data:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,3 +88,4 @@ volumes:
   postgres_data:
   redis_data:
   pgadmin_data:
+  logs_data:

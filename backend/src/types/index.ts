@@ -24,6 +24,7 @@ export interface CarrierPaymentRequest {
   reference: string;
   externalId: string;
   callbackUrl: string;
+  pin?: string;
 }
 
 export interface CarrierPaymentResponse {
@@ -39,6 +40,7 @@ export interface CarrierTransferRequest {
   reference: string;
   externalId: string;
   callbackUrl: string;
+  pin?: string;
 }
 
 export interface CarrierTransferResponse {

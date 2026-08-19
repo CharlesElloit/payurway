@@ -4,6 +4,11 @@ import { accountService } from '../../src/services/accountService';
 import { carrierGatewayFactory } from '../../src/services/carrierGateway';
 import { BadRequestError, NotFoundError, ConflictError } from '../../src/utils/errors';
 
+jest.mock('../../src/utils/encryption', () => ({
+  encryptPin: jest.fn((pin: string) => `encrypted:${pin}`),
+  decryptPin: jest.fn((encrypted: string) => encrypted.replace('encrypted:', '')),
+}));
+
 beforeEach(() => {
   resetMocks();
   jest.restoreAllMocks();
@@ -11,43 +16,54 @@ beforeEach(() => {
 
 describe('AccountService', () => {
   describe('linkAccount', () => {
-    it('should link an MTN account successfully', async () => {
+    it('should link an MTN account successfully with PIN verification', async () => {
       prismaMock.mobileMoneyAccount.findUnique.mockResolvedValue(null);
-      prismaMock.mobileMoneyAccount.create.mockResolvedValue(mockPendingAccount as any);
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        verifyPin: jest.fn().mockResolvedValue(true),
+      });
+      prismaMock.mobileMoneyAccount.create.mockResolvedValue({
+        ...mockAccount,
+        verificationStatus: 'verified',
+      } as any);
 
-      const result = await accountService.linkAccount('user-uuid-1', '+256771234567', 'mtn');
+      const result = await accountService.linkAccount('user-uuid-1', '+256771234567', '1234', 'mtn');
 
       expect(result.id).toBeDefined();
       expect(result.carrier).toBe('mtn');
-      expect(result.verificationStatus).toBe('pending');
-      expect(result.phoneNumber).toBe('+256771234567');
-      expect(redisMock.setex).toHaveBeenCalled();
+      expect(result.verificationStatus).toBe('verified');
+      expect(result.message).toContain('verified');
     });
 
     it('should auto-detect MTN carrier from phone number', async () => {
       prismaMock.mobileMoneyAccount.findUnique.mockResolvedValue(null);
-      prismaMock.mobileMoneyAccount.create.mockResolvedValue(mockPendingAccount as any);
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        verifyPin: jest.fn().mockResolvedValue(true),
+      });
+      prismaMock.mobileMoneyAccount.create.mockResolvedValue(mockAccount as any);
 
-      const result = await accountService.linkAccount('user-uuid-1', '0771234567');
+      const result = await accountService.linkAccount('user-uuid-1', '0771234567', '1234');
 
       expect(result.carrier).toBe('mtn');
     });
 
     it('should auto-detect Airtel carrier from phone number', async () => {
       prismaMock.mobileMoneyAccount.findUnique.mockResolvedValue(null);
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        verifyPin: jest.fn().mockResolvedValue(true),
+      });
       prismaMock.mobileMoneyAccount.create.mockResolvedValue({
-        ...mockPendingAccount,
+        ...mockAccount,
         carrier: 'airtel',
       } as any);
 
-      const result = await accountService.linkAccount('user-uuid-1', '0759876543');
+      const result = await accountService.linkAccount('user-uuid-1', '0759876543', '1234');
 
       expect(result.carrier).toBe('airtel');
     });
 
     it('should throw BadRequestError if carrier cannot be detected', async () => {
       await expect(
-        accountService.linkAccount('user-uuid-1', '12345')
+        accountService.linkAccount('user-uuid-1', '12345', '1234')
       ).rejects.toThrow(BadRequestError);
     });
 
@@ -55,15 +71,29 @@ describe('AccountService', () => {
       prismaMock.mobileMoneyAccount.findUnique.mockResolvedValue(mockAccount as any);
 
       await expect(
-        accountService.linkAccount('user-uuid-1', '+256771234567', 'mtn')
+        accountService.linkAccount('user-uuid-1', '+256771234567', '1234', 'mtn')
       ).rejects.toThrow(ConflictError);
+    });
+
+    it('should throw CarrierError if PIN verification fails', async () => {
+      prismaMock.mobileMoneyAccount.findUnique.mockResolvedValue(null);
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        verifyPin: jest.fn().mockRejectedValue(new Error('Invalid PIN')),
+      });
+
+      await expect(
+        accountService.linkAccount('user-uuid-1', '+256771234567', '0000', 'mtn')
+      ).rejects.toThrow('Invalid PIN');
     });
 
     it('should normalize phone number with country code', async () => {
       prismaMock.mobileMoneyAccount.findUnique.mockResolvedValue(null);
-      prismaMock.mobileMoneyAccount.create.mockResolvedValue(mockPendingAccount as any);
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        verifyPin: jest.fn().mockResolvedValue(true),
+      });
+      prismaMock.mobileMoneyAccount.create.mockResolvedValue(mockAccount as any);
 
-      await accountService.linkAccount('user-uuid-1', '0771234567', 'mtn');
+      await accountService.linkAccount('user-uuid-1', '0771234567', '1234', 'mtn');
 
       expect(prismaMock.mobileMoneyAccount.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -73,58 +103,23 @@ describe('AccountService', () => {
         })
       );
     });
-  });
 
-  describe('verifyAccount', () => {
-    it('should verify account with correct OTP', async () => {
-      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(mockPendingAccount as any);
-      redisMock.get.mockResolvedValue(JSON.stringify({ token: '123456' }));
-      redisMock.del.mockResolvedValue(1);
-      prismaMock.mobileMoneyAccount.update.mockResolvedValue({
-        ...mockPendingAccount,
-        verificationStatus: 'verified',
-        verifiedAt: new Date(),
-      } as any);
+    it('should store encrypted PIN in the database', async () => {
+      prismaMock.mobileMoneyAccount.findUnique.mockResolvedValue(null);
+      (carrierGatewayFactory as jest.Mock).mockReturnValue({
+        verifyPin: jest.fn().mockResolvedValue(true),
+      });
+      prismaMock.mobileMoneyAccount.create.mockResolvedValue(mockAccount as any);
 
-      const result = await accountService.verifyAccount('user-uuid-1', 'account-uuid-2', '123456');
+      await accountService.linkAccount('user-uuid-1', '+256771234567', '1234', 'mtn');
 
-      expect(result.verificationStatus).toBe('verified');
-      expect(result.message).toBe('Account verified successfully');
-    });
-
-    it('should return success if already verified', async () => {
-      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(mockAccount as any);
-
-      const result = await accountService.verifyAccount('user-uuid-1', 'account-uuid-1', '123456');
-
-      expect(result.status).toBe('verified');
-      expect(result.message).toBe('Account already verified');
-    });
-
-    it('should throw NotFoundError if account not found', async () => {
-      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(null);
-
-      await expect(
-        accountService.verifyAccount('user-uuid-1', 'nonexistent', '123456')
-      ).rejects.toThrow(NotFoundError);
-    });
-
-    it('should throw BadRequestError for expired verification', async () => {
-      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(mockPendingAccount as any);
-      redisMock.get.mockResolvedValue(null);
-
-      await expect(
-        accountService.verifyAccount('user-uuid-1', 'account-uuid-2', '123456')
-      ).rejects.toThrow(BadRequestError);
-    });
-
-    it('should throw BadRequestError for wrong OTP', async () => {
-      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(mockPendingAccount as any);
-      redisMock.get.mockResolvedValue(JSON.stringify({ token: '123456' }));
-
-      await expect(
-        accountService.verifyAccount('user-uuid-1', 'account-uuid-2', '000000')
-      ).rejects.toThrow(BadRequestError);
+      expect(prismaMock.mobileMoneyAccount.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            encryptedPin: 'encrypted:1234',
+          }),
+        })
+      );
     });
   });
 
@@ -250,6 +245,33 @@ describe('AccountService', () => {
       const result = await accountService.getDefaultAccount('user-uuid-1');
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getDecryptedPin', () => {
+    it('should return decrypted PIN for verified account', async () => {
+      const accountWithPin = { ...mockAccount, encryptedPin: 'encrypted:1234' };
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(accountWithPin as any);
+
+      const result = await accountService.getDecryptedPin('user-uuid-1', 'account-uuid-1');
+
+      expect(result).toBe('1234');
+    });
+
+    it('should return null if no encrypted PIN stored', async () => {
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(mockAccount as any);
+
+      const result = await accountService.getDecryptedPin('user-uuid-1', 'account-uuid-1');
+
+      expect(result).toBeNull();
+    });
+
+    it('should throw NotFoundError for unknown account', async () => {
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(null);
+
+      await expect(
+        accountService.getDecryptedPin('user-uuid-1', 'unknown-id')
+      ).rejects.toThrow(NotFoundError);
     });
   });
 

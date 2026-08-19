@@ -68,6 +68,26 @@ export class PaymentService {
       const gateway = carrierGatewayFactory(payment.carrier as Carrier);
       const callbackUrl = `${process.env.APP_URL || 'http://localhost:3000'}/api/v1/webhooks/${payment.carrier}`;
 
+      let pin: string | undefined;
+      if (payment.senderId) {
+        const account = await prisma.mobileMoneyAccount.findFirst({
+          where: {
+            userId: payment.senderId,
+            phoneNumber: payment.senderPhone,
+            isActive: true,
+            verificationStatus: 'verified',
+          },
+        });
+        if (account?.encryptedPin) {
+          try {
+            const { decryptPin } = await import('../utils/encryption');
+            pin = decryptPin(account.encryptedPin);
+          } catch {
+            logger.warn({ paymentId }, 'Failed to decrypt stored PIN');
+          }
+        }
+      }
+
       const result = await gateway.requestToPay({
         amount: Number(payment.amount),
         currency: payment.currency,
@@ -76,6 +96,7 @@ export class PaymentService {
         reference: payment.reference,
         externalId: paymentId,
         callbackUrl,
+        pin,
       });
 
       await prisma.payment.update({
@@ -111,6 +132,26 @@ export class PaymentService {
       const gateway = carrierGatewayFactory(payment.carrier as Carrier);
       const callbackUrl = `${process.env.APP_URL || 'http://localhost:3000'}/api/v1/webhooks/${payment.carrier}`;
 
+      let pin: string | undefined;
+      if (payment.senderId) {
+        const account = await prisma.mobileMoneyAccount.findFirst({
+          where: {
+            userId: payment.senderId,
+            phoneNumber: payment.senderPhone,
+            isActive: true,
+            verificationStatus: 'verified',
+          },
+        });
+        if (account?.encryptedPin) {
+          try {
+            const { decryptPin } = await import('../utils/encryption');
+            pin = decryptPin(account.encryptedPin);
+          } catch {
+            logger.warn({ paymentId }, 'Failed to decrypt stored PIN');
+          }
+        }
+      }
+
       const result = await gateway.transfer({
         amount: Number(payment.amount),
         currency: payment.currency,
@@ -118,6 +159,7 @@ export class PaymentService {
         reference: payment.reference,
         externalId: paymentId,
         callbackUrl,
+        pin,
       });
 
       await prisma.payment.update({

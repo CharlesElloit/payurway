@@ -53,4 +53,21 @@ export const config = {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
     max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
   },
+
+  sentry: {
+    dsn: process.env.SENTRY_DSN || '',
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.2'),
+  },
+
+  logs: {
+    dir: process.env.LOG_DIR || 'logs',
+    level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+    maxSize: process.env.LOG_MAX_SIZE || '50m',
+    maxFiles: parseInt(process.env.LOG_MAX_FILES || '7', 10),
+  },
+
+  encryption: {
+    key: process.env.ENCRYPTION_KEY || '',
+  },
 };

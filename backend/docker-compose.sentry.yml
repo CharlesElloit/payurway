@@ -1,0 +1,171 @@
+services:
+  sentry-postgres:
+    image: postgres:16-alpine
+    container_name: sentry-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sentry
+      POSTGRES_USER: sentry
+      POSTGRES_PASSWORD: sentry
+    volumes:
+      - sentry_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sentry -d sentry']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sentry-redis:
+    image: redis:7-alpine
+    container_name: sentry-redis
+    restart: unless-stopped
+    volumes:
+      - sentry_redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sentry-kafka:
+    image: bitnami/kafka:3.7
+    container_name: sentry-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: '0@sentry-kafka:9093'
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://sentry-kafka:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_LOG_RETENTION_HOURS: 24
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - sentry_kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ['CMD-SHELL', 'kafka-topics.sh --bootstrap-server localhost:9092 --list']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sentry-clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: sentry-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: sentry
+      CLICKHOUSE_USER: sentry
+      CLICKHOUSE_PASSWORD: sentry
+    volumes:
+      - sentry_ch_data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ['CMD-SHELL', 'clickhouse-client --query "SELECT 1"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sentry:
+    image: getsentry/sentry:24.8.0
+    container_name: sentry-self-hosted
+    restart: unless-stopped
+    ports:
+      - '9000:9000'
+    environment:
+      SENTRY_SECRET_KEY: 'dev-sentry-secret-key-change-in-production'
+      SENTRY_POSTGRES_HOST: sentry-postgres
+      SENTRY_POSTGRES_PORT: 5432
+      SENTRY_DB_NAME: sentry
+      SENTRY_DB_USER: sentry
+      SENTRY_DB_PASSWORD: sentry
+      SENTRY_REDIS_HOST: sentry-redis
+      SENTRY_REDIS_PORT: 6379
+      SENTRY_KAFKA_HOST: sentry-kafka:9092
+      SENTRY_CLICKHOUSE_HOST: sentry-clickhouse
+      SENTRY_CLICKHOUSE_PORT: 8123
+      SENTRY_CLICKHOUSE_DATABASE: sentry
+      SENTRY_CLICKHOUSE_USER: sentry
+      SENTRY_CLICKHOUSE_PASSWORD: sentry
+      SENTRY_EVENT_RETENTION_DAYS: 30
+      SENTRY_BIND: '0.0.0.0'
+    volumes:
+      - sentry_data:/data
+    depends_on:
+      sentry-postgres:
+        condition: service_healthy
+      sentry-redis:
+        condition: service_healthy
+      sentry-kafka:
+        condition: service_healthy
+      sentry-clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:9000/_health/ || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  sentry-worker:
+    image: getsentry/sentry:24.8.0
+    container_name: sentry-worker
+    restart: unless-stopped
+    command: run worker
+    environment:
+      SENTRY_SECRET_KEY: 'dev-sentry-secret-key-change-in-production'
+      SENTRY_POSTGRES_HOST: sentry-postgres
+      SENTRY_POSTGRES_PORT: 5432
+      SENTRY_DB_NAME: sentry
+      SENTRY_DB_USER: sentry
+      SENTRY_DB_PASSWORD: sentry
+      SENTRY_REDIS_HOST: sentry-redis
+      SENTRY_REDIS_PORT: 6379
+      SENTRY_KAFKA_HOST: sentry-kafka:9092
+      SENTRY_CLICKHOUSE_HOST: sentry-clickhouse
+      SENTRY_CLICKHOUSE_PORT: 8123
+      SENTRY_CLICKHOUSE_DATABASE: sentry
+      SENTRY_CLICKHOUSE_USER: sentry
+      SENTRY_CLICKHOUSE_PASSWORD: sentry
+    volumes:
+      - sentry_data:/data
+    depends_on:
+      sentry:
+        condition: service_healthy
+
+  sentry-cron:
+    image: getsentry/sentry:24.8.0
+    container_name: sentry-cron
+    restart: unless-stopped
+    command: run cron
+    environment:
+      SENTRY_SECRET_KEY: 'dev-sentry-secret-key-change-in-production'
+      SENTRY_POSTGRES_HOST: sentry-postgres
+      SENTRY_POSTGRES_PORT: 5432
+      SENTRY_DB_NAME: sentry
+      SENTRY_DB_USER: sentry
+      SENTRY_DB_PASSWORD: sentry
+      SENTRY_REDIS_HOST: sentry-redis
+      SENTRY_REDIS_PORT: 6379
+      SENTRY_KAFKA_HOST: sentry-kafka:9092
+      SENTRY_CLICKHOUSE_HOST: sentry-clickhouse
+      SENTRY_CLICKHOUSE_PORT: 8123
+      SENTRY_CLICKHOUSE_DATABASE: sentry
+      SENTRY_CLICKHOUSE_USER: sentry
+      SENTRY_CLICKHOUSE_PASSWORD: sentry
+    volumes:
+      - sentry_data:/data
+    depends_on:
+      sentry:
+        condition: service_healthy
+
+volumes:
+  sentry_pg_data:
+  sentry_redis_data:
+  sentry_kafka_data:
+  sentry_ch_data:
+  sentry_data:

@@ -1,13 +1,13 @@
 import prisma from '../config/database';
 import { Carrier } from '../types';
-import { normalizePhoneNumber, detectCarrier, generateOTP } from '../utils/helpers';
+import { normalizePhoneNumber, detectCarrier } from '../utils/helpers';
+import { encryptPin, decryptPin } from '../utils/encryption';
 import { BadRequestError, NotFoundError, ConflictError, CarrierError } from '../utils/errors';
-import { redis } from '../config/redis';
 import { carrierGatewayFactory } from './carrierGateway';
 import logger from '../utils/logger';
 
 export class AccountService {
-  async linkAccount(userId: string, phoneNumber: string, carrier?: Carrier) {
+  async linkAccount(userId: string, phoneNumber: string, pin: string, carrier?: Carrier) {
     const normalizedPhone = normalizePhoneNumber(phoneNumber);
     const detectedCarrier = carrier || detectCarrier(normalizedPhone);
 
@@ -23,78 +23,30 @@ export class AccountService {
       throw new ConflictError('This phone number is already linked to your account');
     }
 
-    const verifyToken = generateOTP();
+    const gateway = carrierGatewayFactory(detectedCarrier);
+    await gateway.verifyPin(normalizedPhone, pin);
+
+    const encryptedPin = encryptPin(pin);
 
     const account = await prisma.mobileMoneyAccount.create({
       data: {
         userId,
         phoneNumber: normalizedPhone,
         carrier: detectedCarrier,
-        verificationToken: verifyToken,
-        verificationStatus: 'pending',
+        encryptedPin,
+        verificationStatus: 'verified',
+        verifiedAt: new Date(),
       },
     });
 
-    await redis.setex(
-      `verify:${account.id}`,
-      300,
-      JSON.stringify({ token: verifyToken })
-    );
-
-    logger.info({ userId, accountId: account.id, carrier: detectedCarrier }, 'Account linked, verification pending');
+    logger.info({ userId, accountId: account.id, carrier: detectedCarrier }, 'Account linked and verified via PIN');
 
     return {
       id: account.id,
       phoneNumber: account.phoneNumber,
       carrier: account.carrier,
       verificationStatus: account.verificationStatus,
-      verificationToken: verifyToken,
-      message: 'Verification OTP sent to your mobile money number',
-    };
-  }
-
-  async verifyAccount(userId: string, accountId: string, otp: string) {
-    const account = await prisma.mobileMoneyAccount.findFirst({
-      where: { id: accountId, userId },
-    });
-
-    if (!account) throw new NotFoundError('Account not found');
-
-    if (account.verificationStatus === 'verified') {
-      return { message: 'Account already verified', status: 'verified' };
-    }
-
-    const key = `verify:${account.id}`;
-    const stored = await redis.get(key);
-
-    if (!stored) {
-      throw new BadRequestError('Verification expired. Please link the account again.');
-    }
-
-    const data = JSON.parse(stored);
-    if (data.token !== otp) {
-      throw new BadRequestError('Invalid verification code');
-    }
-
-    await redis.del(key);
-
-    const updated = await prisma.mobileMoneyAccount.update({
-      where: { id: accountId },
-      data: {
-        verificationStatus: 'verified',
-        verifiedAt: new Date(),
-        verificationToken: null,
-      },
-    });
-
-    logger.info({ userId, accountId }, 'Account verified');
-
-    return {
-      id: updated.id,
-      phoneNumber: updated.phoneNumber,
-      carrier: updated.carrier,
-      verificationStatus: updated.verificationStatus,
-      message: 'Account verified successfully',
+      message: 'Account linked and verified successfully',
     };
   }
 
@@ -195,6 +147,26 @@ export class AccountService {
     }
 
     return account;
+  }
+
+  async getDecryptedPin(userId: string, accountId: string): Promise<string | null> {
+    const account = await prisma.mobileMoneyAccount.findFirst({
+      where: { id: accountId, userId, isActive: true, verificationStatus: 'verified' },
+    });
+
+    if (!account) throw new NotFoundError('Verified account not found');
+
+    if (!account.encryptedPin) return null;
+
+    return decryptPin(account.encryptedPin);
+  }
+
+  async getAccountByPhone(userId: string, phoneNumber: string) {
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+    return prisma.mobileMoneyAccount.findFirst({
+      where: { userId, phoneNumber: normalizedPhone, isActive: true, verificationStatus: 'verified' },
+    });
   }
 
   async getBalance(userId: string, accountId: string) {

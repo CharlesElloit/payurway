@@ -14,7 +14,14 @@ jest.mock('../../src/services/accountService', () => ({
     updateAccountBalance: jest.fn(),
     getBalance: jest.fn(),
     refreshLinkedBalance: jest.fn(),
+    getDecryptedPin: jest.fn(),
+    getAccountByPhone: jest.fn(),
   },
+}));
+
+jest.mock('../../src/utils/encryption', () => ({
+  encryptPin: jest.fn((pin: string) => `encrypted:${pin}`),
+  decryptPin: jest.fn((encrypted: string) => encrypted.replace('encrypted:', '')),
 }));
 
 const mockGateway = {
@@ -31,6 +38,8 @@ beforeEach(() => {
   (notificationService.createNotification as jest.Mock).mockReset();
   (accountService.refreshBalance as jest.Mock).mockReset();
   (accountService.updateAccountBalance as jest.Mock).mockReset();
+  (accountService.getDecryptedPin as jest.Mock).mockReset();
+  (accountService.getAccountByPhone as jest.Mock).mockReset();
 });
 
 describe('PaymentService', () => {
@@ -394,6 +403,7 @@ describe('PaymentService', () => {
       const pendingPayment = { ...mockPayment, status: 'pending' as const };
       prismaMock.payment.findUnique.mockResolvedValue(pendingPayment as any);
       prismaMock.payment.update.mockResolvedValue(pendingPayment as any);
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(null as any);
       mockGateway.requestToPay.mockResolvedValue({
         transactionId: 'carrier-tx-123',
         status: 'completed',
@@ -408,10 +418,34 @@ describe('PaymentService', () => {
       expect(prismaMock.payment.update).toHaveBeenCalled();
     });
 
+    it('should pass decrypted PIN to gateway when sender has stored PIN', async () => {
+      const pendingPayment = { ...mockPayment, status: 'pending' as const, senderId: 'user-uuid-1' };
+      prismaMock.payment.findUnique.mockResolvedValue(pendingPayment as any);
+      prismaMock.payment.update.mockResolvedValue(pendingPayment as any);
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue({
+        encryptedPin: 'encrypted:1234',
+      } as any);
+      (accountService.getDecryptedPin as jest.Mock).mockResolvedValue('1234');
+      mockGateway.requestToPay.mockResolvedValue({
+        transactionId: 'carrier-tx-123',
+        status: 'completed',
+      });
+      prismaMock.payment.findUnique
+        .mockResolvedValueOnce(pendingPayment as any)
+        .mockResolvedValueOnce({ ...pendingPayment, status: 'completed' } as any);
+
+      await paymentService.processPaymentAsync('payment-uuid-1');
+
+      expect(mockGateway.requestToPay).toHaveBeenCalledWith(
+        expect.objectContaining({ pin: '1234' })
+      );
+    });
+
     it('should handle gateway errors gracefully', async () => {
       const pendingPayment = { ...mockPayment, status: 'pending' as const };
       prismaMock.payment.findUnique.mockResolvedValue(pendingPayment as any);
       prismaMock.payment.update.mockResolvedValue(pendingPayment as any);
+      prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue(null as any);
       mockGateway.requestToPay.mockRejectedValue(new Error('Network error'));
 
       await paymentService.processPaymentAsync('payment-uuid-1');

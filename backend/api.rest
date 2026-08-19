@@ -12,7 +12,7 @@
 
 
 ### After login, paste your token here:
-@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjdiNDlhYzM5LTI2OWYtNDQzYS04NmIzLTcwYzgwNWU5ZWJlYiIsImVtYWlsIjoiYWNpZm9yY2hhcmxlc0BnbWFpbC5jb20iLCJwaG9uZSI6IisyNTY3NjEzODAyOTQiLCJpYXQiOjE3ODcwNzgzNTMsImV4cCI6MTc4NzA3OTI1M30.fiE4nIOTqwmS1DRMSMe_NxsMwqPeDo1i94dCuuty15Y
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Nzg4MjVlLTAxZTAtNDQ3MS05MDZmLTJhM2U2MGZlMzVhYyIsInBob25lIjoiKzI1Njc2MTM4MDI5NCIsImlhdCI6MTc4NzE3NDQxMywiZXhwIjoxNzg3MTc1MzEzfQ.VM-nRaRgFfkQvtBO_l7lyIGqzs9PnxceUZHKmT8r-_I
 
 
 ### ============================================================
@@ -63,7 +63,7 @@ Content-Type: application/json
 
 {
   "phone": "+256761380294",
-  "otp": "112206"
+  "otp": "857180"
 }
 
 
@@ -127,25 +127,15 @@ Authorization: Bearer {{authToken}}
 ### ============================================================
 
 
-### Link an MTN account
+### Link an MTN account (PIN verified with carrier, then encrypted and stored)
 POST {{baseUrl}}/accounts/link
 Content-Type: application/json
 Authorization: Bearer {{authToken}}
 
 {
   "phoneNumber": "+256761380294",
+  "pin": "1234",
   "carrier": "mtn"
-}
-
-
-### Verify account (OTP from carrier)
-POST {{baseUrl}}/accounts/verify
-Content-Type: application/json
-Authorization: Bearer {{authToken}}
-
-{
-  "accountId": "5cab15c1-b14e-49dc-961d-9092e655d35b",
-  "otp": "123456"
 }
 
 

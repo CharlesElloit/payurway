@@ -171,4 +171,40 @@ export class AirtelGateway implements CarrierGateway {
       throw new CarrierError('airtel', error.response?.data?.status?.message || 'Failed to fetch balance');
     }
   }
+
+  async verifyPin(phoneNumber: string, pin: string): Promise<boolean> {
+    try {
+      const token = await this.getAccessToken();
+      const referenceId = `verify-${Date.now()}`;
+
+      await axios.post(
+        `${this.apiUrl}/merchant/v1/payments`,
+        {
+          amount: 1,
+          currency: 'UGX',
+          externalTransactionID: referenceId,
+          customer: {
+            msisdn: phoneNumber,
+          },
+          transactionReference: 'PIN Verification',
+          pin,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Country': 'UG',
+            'X-Currency': 'UGX',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      logger.info({ phoneNumber }, 'Airtel PIN verification initiated');
+      return true;
+    } catch (error: any) {
+      const message = error.response?.data?.status?.message || error.message;
+      logger.warn({ error: error.response?.data, phoneNumber }, 'Airtel PIN verification failed');
+      throw new CarrierError('airtel', message || 'PIN verification failed');
+    }
+  }
 }

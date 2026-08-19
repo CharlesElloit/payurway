@@ -45,12 +45,10 @@ export const linkAccountSchema = Joi.object({
   phoneNumber: Joi.string()
     .pattern(/^\+?[0-9]{10,15}$/)
     .required(),
+  pin: Joi.string().pattern(/^\d{4,6}$/).required().messages({
+    'string.pattern.base': 'PIN must be 4-6 digits',
+  }),
   carrier: Joi.string().valid('mtn', 'airtel').optional(),
-});
-
-export const verifyAccountSchema = Joi.object({
-  accountId: Joi.string().uuid().required(),
-  otp: Joi.string().length(6).required(),
 });
 
 export const generateQRCodeSchema = Joi.object({

@@ -171,4 +171,44 @@ export class MTNGateway implements CarrierGateway {
       throw new CarrierError('mtn', error.response?.data?.message || 'Failed to fetch balance');
     }
   }
+
+  async verifyPin(phoneNumber: string, pin: string): Promise<boolean> {
+    try {
+      const token = await this.getAccessToken();
+      const referenceId = `verify-${Date.now()}`;
+
+      await axios.post(
+        `${this.apiUrl}/collection/v1_0/requesttopay`,
+        {
+          amount: '1',
+          currency: 'UGX',
+          externalId: referenceId,
+          payer: {
+            partyIdType: 'MSISDN',
+            partyId: phoneNumber,
+          },
+          payerMessage: 'Account verification',
+          payeeNote: 'PIN verification',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Reference-Id': referenceId,
+            'X-Target-Environment': this.environment,
+            'Ocp-Apim-Subscription-Key': this.subscriptionKey,
+            'X-Callback-Url': `${config.mtn.callbackUrl}/verify`,
+            'Content-Type': 'application/json',
+            'X-Pin': pin,
+          },
+        }
+      );
+
+      logger.info({ phoneNumber }, 'MTN PIN verification initiated');
+      return true;
+    } catch (error: any) {
+      const message = error.response?.data?.message || error.message;
+      logger.warn({ error: error.response?.data, phoneNumber }, 'MTN PIN verification failed');
+      throw new CarrierError('mtn', message || 'PIN verification failed');
+    }
+  }
 }

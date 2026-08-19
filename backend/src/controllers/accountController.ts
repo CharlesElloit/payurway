@@ -5,19 +5,9 @@ import { accountService } from '../services/accountService';
 export class AccountController {
   async linkAccount(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
-      const { phoneNumber, carrier } = req.body;
-      const result = await accountService.linkAccount(req.user!.id, phoneNumber, carrier);
+      const { phoneNumber, pin, carrier } = req.body;
+      const result = await accountService.linkAccount(req.user!.id, phoneNumber, pin, carrier);
       res.status(201).json({ success: true, data: result });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async verifyAccount(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-    try {
-      const { accountId, otp } = req.body;
-      const result = await accountService.verifyAccount(req.user!.id, accountId, otp);
-      res.json({ success: true, data: result });
     } catch (error) {
       next(error);
     }

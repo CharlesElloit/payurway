@@ -31,6 +31,17 @@ jest.mock('../../src/utils/logger', () => ({
     debug: jest.fn(),
     child: jest.fn().mockReturnThis(),
   },
+  captureError: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+jest.mock('@sentry/node', () => ({
+  __esModule: true,
+  init: jest.fn(),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+  withScope: jest.fn((cb: any) => cb({ setTag: jest.fn(), setUser: jest.fn(), setExtras: jest.fn() })),
+  expressIntegration: jest.fn(),
 }));
 
 jest.mock('../../src/services/notificationService', () => ({
