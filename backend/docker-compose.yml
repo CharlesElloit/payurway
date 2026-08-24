@@ -74,10 +74,10 @@ services:
     container_name: paymybills-pgadmin
     restart: unless-stopped
     ports:
-      - '5051:80'
+      - '5698:80'
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@paymybills.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: admin@ugencoin.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:

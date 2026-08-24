@@ -12,7 +12,7 @@
 
 
 ### After login, paste your token here:
-@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3Nzg4MjVlLTAxZTAtNDQ3MS05MDZmLTJhM2U2MGZlMzVhYyIsInBob25lIjoiKzI1Njc2MTM4MDI5NCIsImlhdCI6MTc4NzE3NDQxMywiZXhwIjoxNzg3MTc1MzEzfQ.VM-nRaRgFfkQvtBO_l7lyIGqzs9PnxceUZHKmT8r-_I
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjhhNzA1YWU3LWIzNDYtNGViMi1hZWMyLTQzOTM3MjllMGYyMSIsInBob25lIjoiKzI1Njc2MTM4MDI5NCIsImlhdCI6MTc4NzYwNzAyNywiZXhwIjoxNzg3NjA3OTI3fQ.Gt5VS3j82cprmEquieJOjXyu_jD6zjSpOqeOKliy3W0
 
 
 ### ============================================================
@@ -63,7 +63,7 @@ Content-Type: application/json
 
 {
   "phone": "+256761380294",
-  "otp": "857180"
+  "otp": "344170"
 }
 
 
@@ -134,7 +134,7 @@ Authorization: Bearer {{authToken}}
 
 {
   "phoneNumber": "+256761380294",
-  "pin": "1234",
+  "pin": "",
   "carrier": "mtn"
 }
 
@@ -401,3 +401,28 @@ Authorization: Bearer {{authToken}}
 ### Get analytics (admin)
 GET {{baseUrl}}/admin/analytics
 Authorization: Bearer {{authToken}}
+
+
+### CREATE MTN API USER
+POST https://sandbox.momodeveloper.mtn.com/v1_0/apiuser
+Content-Type: application/json
+X-Reference-Id: c0ea3c25-595f-4d49-95bc-648adea40809
+Ocp-Apim-Subscription-Key: dfe72c12e1f94464b2ccaa7fa232f867
+
+{
+  "providerCallbackHost": "http://localhost:3000/api/v1/webhooks/mtn"
+}
+
+
+### GET MTN API USER
+GET https://sandbox.momodeveloper.mtn.com/v1_0/apiuser/c0ea3c25-595f-4d49-95bc-648adea40809
+Content-Type: application/json
+Cache-Control: no-cache
+Ocp-Apim-Subscription-Key: dfe72c12e1f94464b2ccaa7fa232f867
+
+
+### CREATE MTN API KEY
+POST https://sandbox.momodeveloper.mtn.com/v1_0/apiuser/c0ea3c25-595f-4d49-95bc-648adea40809/apikey
+Content-Type: application/json
+Cache-Control: no-cache
+Ocp-Apim-Subscription-Key: dfe72c12e1f94464b2ccaa7fa232f867
