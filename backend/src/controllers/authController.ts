@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../types';
 import { authService } from '../services/authService';
+import { biometricService } from '../services/biometricService';
 
 export class AuthController {
   async register(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -86,6 +87,83 @@ export class AuthController {
     try {
       const { currentPassword, newPassword } = req.body;
       const result = await authService.changePassword(req.user!.id, currentPassword, newPassword);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async checkPhone(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { phone } = req.body;
+      const result = await authService.checkPhone(phone);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ─── Biometric Auth ─────────────────────────────────────────
+  async biometricChallenge(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await biometricService.generateChallenge(req.user!.id);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async biometricLoginChallenge(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await biometricService.generateChallenge();
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async biometricRegister(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await biometricService.register(req.user!.id, req.body);
+      res.status(201).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async biometricLogin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const userAgent = req.headers['user-agent'];
+      const ipAddress = req.ip;
+      const result = await biometricService.verifyAndLogin(req.body, userAgent, ipAddress);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async biometricCredentials(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await biometricService.listCredentials(req.user!.id);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async biometricDelete(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const { credentialId } = req.body;
+      const result = await biometricService.deleteCredential(req.user!.id, credentialId);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async biometricRevokeAll(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await biometricService.revokeAllCredentials(req.user!.id);
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);

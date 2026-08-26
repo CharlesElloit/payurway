@@ -23,6 +23,7 @@ export interface CarrierPaymentRequest {
   receiverPhone: string;
   reference: string;
   externalId: string;
+  transactionToken: string;
   callbackUrl: string;
   pin?: string;
 }
@@ -39,6 +40,7 @@ export interface CarrierTransferRequest {
   receiverPhone: string;
   reference: string;
   externalId: string;
+  transactionToken: string;
   callbackUrl: string;
   pin?: string;
 }
@@ -68,4 +70,48 @@ export interface PaginatedResponse<T> {
     limit: number;
     totalPages: number;
   };
+}
+
+export type BiometricDeviceType = 'fingerprint' | 'face' | 'voice';
+
+export interface BiometricRegisterRequest {
+  credentialId: string;
+  publicKey: string;
+  deviceName?: string;
+  deviceType: BiometricDeviceType;
+}
+
+export interface BiometricLoginRequest {
+  phone: string;
+  credentialId: string;
+  signature: string;
+  challenge: string;
+}
+
+export interface BiometricChallengeResponse {
+  challenge: string;
+  expiresAt: string;
+}
+
+export interface BiometricRegisterResponse {
+  credentialId: string;
+  deviceName: string | null;
+  deviceType: string;
+  createdAt: Date;
+}
+
+export interface BiometricLoginResponse {
+  user: Omit<any, 'passwordHash'>;
+  accessToken: string;
+  refreshToken: string;
+}
+
+export interface BiometricCredentialResponse {
+  id: string;
+  credentialId: string;
+  deviceName: string | null;
+  deviceType: string;
+  isActive: boolean;
+  lastUsedAt: Date | null;
+  createdAt: Date;
 }

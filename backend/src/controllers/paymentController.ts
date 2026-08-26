@@ -15,6 +15,7 @@ export class PaymentController {
         description: req.body.description,
         currency: req.body.currency,
         qrCodeId: req.body.qrCodeId,
+        pin: req.body.pin,
       });
       res.status(201).json({ success: true, data: result });
     } catch (error) {
@@ -84,7 +85,8 @@ export class PaymentController {
       const result = await paymentService.respondToRequest(
         req.user!.id,
         req.params.id,
-        req.body.action
+        req.body.action,
+        req.body.pin
       );
       res.json({ success: true, data: result });
     } catch (error) {

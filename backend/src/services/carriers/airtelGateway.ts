@@ -52,7 +52,7 @@ export class AirtelGateway implements CarrierGateway {
         {
           amount: data.amount,
           currency: data.currency,
-          externalTransactionID: data.externalId,
+          externalTransactionID: data.transactionToken,
           customer: {
             msisdn: data.senderPhone,
           },
@@ -60,6 +60,7 @@ export class AirtelGateway implements CarrierGateway {
           receivingParty: {
             msisdn: data.receiverPhone,
           },
+          ...(data.pin ? { pin: data.pin } : {}),
         },
         {
           headers: {
@@ -71,10 +72,10 @@ export class AirtelGateway implements CarrierGateway {
         }
       );
 
-      logger.info({ transactionId: data.externalId }, 'Airtel payment initiated');
+      logger.info({ transactionToken: data.transactionToken, externalId: data.externalId }, 'Airtel payment initiated');
 
       return {
-        transactionId: data.externalId,
+        transactionId: data.transactionToken,
         status: 'processing',
         message: 'Payment initiated',
       };
@@ -94,11 +95,12 @@ export class AirtelGateway implements CarrierGateway {
         {
           amount: data.amount,
           currency: data.currency,
-          externalTransactionID: data.externalId,
+          externalTransactionID: data.transactionToken,
           payee: {
             msisdn: data.receiverPhone,
           },
           transactionReference: data.reference,
+          ...(data.pin ? { pin: data.pin } : {}),
         },
         {
           headers: {
@@ -111,7 +113,7 @@ export class AirtelGateway implements CarrierGateway {
       );
 
       return {
-        transactionId: data.externalId,
+        transactionId: data.transactionToken,
         status: 'processing',
         message: 'Disbursement initiated',
       };
@@ -205,6 +207,42 @@ export class AirtelGateway implements CarrierGateway {
       const message = error.response?.data?.status?.message || error.message;
       logger.warn({ error: error.response?.data, phoneNumber }, 'Airtel PIN verification failed');
       throw new CarrierError('airtel', message || 'PIN verification failed');
+    }
+  }
+
+  async preapprove(phoneNumber: string, pin: string): Promise<boolean> {
+    try {
+      const token = await this.getAccessToken();
+      const referenceId = `preapprove-${Date.now()}`;
+
+      await axios.post(
+        `${this.apiUrl}/merchant/v1/payments`,
+        {
+          amount: 1,
+          currency: 'UGX',
+          externalTransactionID: referenceId,
+          customer: {
+            msisdn: phoneNumber,
+          },
+          transactionReference: 'Preapproval Verification',
+          pin,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Country': 'UG',
+            'X-Currency': 'UGX',
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      logger.info({ phoneNumber }, 'Airtel preapproval initiated');
+      return true;
+    } catch (error: any) {
+      const message = error.response?.data?.status?.message || error.message;
+      logger.warn({ error: error.response?.data, phoneNumber }, 'Airtel preapproval failed');
+      throw new CarrierError('airtel', message || 'Preapproval failed');
     }
   }
 }

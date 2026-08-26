@@ -1,7 +1,7 @@
 import prisma from '../config/database';
 import { redis } from '../config/redis';
 import { Carrier, PaymentStatus } from '../types';
-import { generateTransactionReference } from '../utils/helpers';
+import { generateTransactionReference, generateTransactionToken } from '../utils/helpers';
 import { carrierGatewayFactory } from './carrierGateway';
 import { notificationService } from './notificationService';
 import { accountService } from './accountService';
@@ -19,6 +19,7 @@ export class PaymentService {
     description?: string;
     currency?: string;
     qrCodeId?: string;
+    pin?: string;
   }) {
     const reference = generateTransactionReference();
 
@@ -40,7 +41,7 @@ export class PaymentService {
 
     logger.info({ paymentId: payment.id, reference, carrier: data.carrier }, 'Payment initiated');
 
-    this.processPaymentAsync(payment.id).catch((err) => {
+    this.processPaymentAsync(payment.id, data.pin).catch((err) => {
       logger.error({ paymentId: payment.id, err }, 'Async payment processing failed');
     });
 
@@ -55,9 +56,12 @@ export class PaymentService {
     };
   }
 
-  async processPaymentAsync(paymentId: string) {
+  async processPaymentAsync(paymentId: string, providedPin?: string) {
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) return;
+
+    const transactionToken = generateTransactionToken();
+    let preapproved = false;
 
     try {
       await prisma.payment.update({
@@ -78,12 +82,18 @@ export class PaymentService {
             verificationStatus: 'verified',
           },
         });
-        if (account?.encryptedPin) {
-          try {
-            const { decryptPin } = await import('../utils/encryption');
-            pin = decryptPin(account.encryptedPin);
-          } catch {
-            logger.warn({ paymentId }, 'Failed to decrypt stored PIN');
+
+        if (account) {
+          if (account.isPreapproved && account.encryptedPin) {
+            preapproved = true;
+            try {
+              const { decryptPin } = await import('../utils/encryption');
+              pin = decryptPin(account.encryptedPin);
+            } catch {
+              logger.warn({ paymentId }, 'Failed to decrypt stored PIN for preapproved account');
+            }
+          } else if (providedPin) {
+            pin = providedPin;
           }
         }
       }
@@ -95,17 +105,37 @@ export class PaymentService {
         receiverPhone: payment.receiverPhone,
         reference: payment.reference,
         externalId: paymentId,
+        transactionToken,
         callbackUrl,
         pin,
       });
+
+      const completedAt = result.status === 'completed' ? new Date() : null;
 
       await prisma.payment.update({
         where: { id: paymentId },
         data: {
           carrierTransactionId: result.transactionId,
           status: result.status === 'completed' ? 'completed' : 'processing',
-          completedAt: result.status === 'completed' ? new Date() : null,
+          completedAt,
         },
+      });
+
+      await this.logDailyTransaction({
+        paymentId,
+        reference: payment.reference,
+        transactionToken,
+        amount: Number(payment.amount),
+        currency: payment.currency,
+        senderPhone: payment.senderPhone,
+        receiverPhone: payment.receiverPhone,
+        senderId: payment.senderId,
+        receiverId: payment.receiverId,
+        carrier: payment.carrier,
+        carrierTransactionId: result.transactionId,
+        status: result.status === 'completed' ? 'completed' : 'processing',
+        preapproved,
+        completedAt,
       });
 
       if (result.status === 'completed') {
@@ -115,13 +145,33 @@ export class PaymentService {
       }
     } catch (error: any) {
       logger.error({ paymentId, error: error.message }, 'Payment processing error');
+
+      await this.logDailyTransaction({
+        paymentId,
+        reference: payment.reference,
+        transactionToken,
+        amount: Number(payment.amount),
+        currency: payment.currency,
+        senderPhone: payment.senderPhone,
+        receiverPhone: payment.receiverPhone,
+        senderId: payment.senderId,
+        receiverId: payment.receiverId,
+        carrier: payment.carrier,
+        status: 'failed',
+        preapproved,
+        failureReason: error.message,
+      });
+
       await this.onPaymentFailed(paymentId, error.message || 'Payment processing failed');
     }
   }
 
-  async processTransferAsync(paymentId: string) {
+  async processTransferAsync(paymentId: string, providedPin?: string) {
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) return;
+
+    const transactionToken = generateTransactionToken();
+    let preapproved = false;
 
     try {
       await prisma.payment.update({
@@ -142,12 +192,18 @@ export class PaymentService {
             verificationStatus: 'verified',
           },
         });
-        if (account?.encryptedPin) {
-          try {
-            const { decryptPin } = await import('../utils/encryption');
-            pin = decryptPin(account.encryptedPin);
-          } catch {
-            logger.warn({ paymentId }, 'Failed to decrypt stored PIN');
+
+        if (account) {
+          if (account.isPreapproved && account.encryptedPin) {
+            preapproved = true;
+            try {
+              const { decryptPin } = await import('../utils/encryption');
+              pin = decryptPin(account.encryptedPin);
+            } catch {
+              logger.warn({ paymentId }, 'Failed to decrypt stored PIN for preapproved account');
+            }
+          } else if (providedPin) {
+            pin = providedPin;
           }
         }
       }
@@ -158,17 +214,37 @@ export class PaymentService {
         receiverPhone: payment.receiverPhone,
         reference: payment.reference,
         externalId: paymentId,
+        transactionToken,
         callbackUrl,
         pin,
       });
+
+      const completedAt = result.status === 'completed' ? new Date() : null;
 
       await prisma.payment.update({
         where: { id: paymentId },
         data: {
           carrierTransactionId: result.transactionId,
           status: result.status === 'completed' ? 'completed' : 'processing',
-          completedAt: result.status === 'completed' ? new Date() : null,
+          completedAt,
         },
+      });
+
+      await this.logDailyTransaction({
+        paymentId,
+        reference: payment.reference,
+        transactionToken,
+        amount: Number(payment.amount),
+        currency: payment.currency,
+        senderPhone: payment.senderPhone,
+        receiverPhone: payment.receiverPhone,
+        senderId: payment.senderId,
+        receiverId: payment.receiverId,
+        carrier: payment.carrier,
+        carrierTransactionId: result.transactionId,
+        status: result.status === 'completed' ? 'completed' : 'processing',
+        preapproved,
+        completedAt,
       });
 
       if (result.status === 'completed') {
@@ -178,7 +254,66 @@ export class PaymentService {
       }
     } catch (error: any) {
       logger.error({ paymentId, error: error.message }, 'Transfer processing error');
+
+      await this.logDailyTransaction({
+        paymentId,
+        reference: payment.reference,
+        transactionToken,
+        amount: Number(payment.amount),
+        currency: payment.currency,
+        senderPhone: payment.senderPhone,
+        receiverPhone: payment.receiverPhone,
+        senderId: payment.senderId,
+        receiverId: payment.receiverId,
+        carrier: payment.carrier,
+        status: 'failed',
+        preapproved,
+        failureReason: error.message,
+      });
+
       await this.onPaymentFailed(paymentId, error.message || 'Transfer processing failed');
+    }
+  }
+
+  private async logDailyTransaction(data: {
+    paymentId: string;
+    reference: string;
+    transactionToken: string;
+    amount: number;
+    currency: string;
+    senderPhone: string;
+    receiverPhone: string;
+    senderId: string | null;
+    receiverId: string | null;
+    carrier: any;
+    carrierTransactionId?: string;
+    status: PaymentStatus;
+    preapproved: boolean;
+    failureReason?: string;
+    completedAt?: Date | null;
+  }) {
+    try {
+      await prisma.dailyTransaction.create({
+        data: {
+          paymentId: data.paymentId,
+          reference: data.reference,
+          transactionToken: data.transactionToken,
+          amount: data.amount,
+          currency: data.currency,
+          senderPhone: data.senderPhone,
+          receiverPhone: data.receiverPhone,
+          senderId: data.senderId,
+          receiverId: data.receiverId,
+          carrier: data.carrier,
+          carrierTransactionId: data.carrierTransactionId || null,
+          status: data.status,
+          preapproved: data.preapproved,
+          failureReason: data.failureReason || null,
+          completedAt: data.completedAt || null,
+        },
+      });
+    } catch (error: any) {
+      logger.error({ paymentId: data.paymentId, error: error.message }, 'Failed to log daily transaction');
     }
   }
 
@@ -346,7 +481,7 @@ export class PaymentService {
     };
   }
 
-  async respondToRequest(userId: string, paymentId: string, action: 'accept' | 'reject') {
+  async respondToRequest(userId: string, paymentId: string, action: 'accept' | 'reject', pin?: string) {
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new NotFoundError('Payment request not found');
 
@@ -381,7 +516,7 @@ export class PaymentService {
       data: { status: 'pending' },
     });
 
-    this.processPaymentAsync(paymentId).catch((err) => {
+    this.processPaymentAsync(paymentId, pin).catch((err) => {
       logger.error({ paymentId, err }, 'Async payment processing failed');
     });
 

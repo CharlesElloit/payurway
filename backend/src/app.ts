@@ -7,6 +7,7 @@ import * as Sentry from '@sentry/node';
 import { config } from './config';
 import routes from './routes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { activityLogger } from './middleware/activityLogger';
 import logger from './utils/logger';
 
 if (config.sentry.dsn) {
@@ -62,6 +63,8 @@ const authLimiter = rateLimit({
 app.use('/api/v1/auth/login', authLimiter);
 app.use('/api/v1/auth/register', authLimiter);
 app.use('/api/v1/auth/verify-otp', authLimiter);
+
+app.use(activityLogger);
 
 app.use('/api/v1', routes);
 

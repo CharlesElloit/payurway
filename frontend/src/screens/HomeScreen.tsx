@@ -17,7 +17,7 @@ import PayScanModal from '../components/PayScanModal';
 import ProfileScreen from './ProfileScreen'; // Import your ProfileScreen
 
 import {
-  user,
+  user as mockUser,
   weekDays,
   wallet,
   timelineRows,
@@ -36,9 +36,26 @@ const CHART_FADE_DISTANCE = moderateScale(180);
 
 interface HomeScreenProps {
   onLogout?: () => void;
+  user?: {
+    id: string;
+    phone: string;
+    firstName?: string;
+    lastName?: string;
+    isVerified?: boolean;
+  };
 }
 
-export default function HomeScreen({ onLogout }: HomeScreenProps) {
+export default function HomeScreen({ onLogout, user: apiUser }: HomeScreenProps) {
+  const displayUser = apiUser
+    ? {
+        name: apiUser.firstName
+          ? `${apiUser.firstName} ${apiUser.lastName || ''}`.trim()
+          : apiUser.phone,
+        id: apiUser.id,
+        avatarUrl: `https://i.pravatar.cc/150?u=${apiUser.id}`,
+        notificationCount: 0,
+      }
+    : mockUser;
   const [selectedDay, setSelectedDay] = useState('20');
   const [billsTab, setBillsTab] = useState<'Upcoming' | 'Paid'>('Upcoming');
   const [activeNavTab, setActiveNavTab] = useState<TabKey>('Home');
@@ -107,10 +124,10 @@ export default function HomeScreen({ onLogout }: HomeScreenProps) {
             stickyHeaderIndices={[BILL_TIMELINE_STICKY_INDEX]}
           >
             <HeroHeaderCard
-              name={user.name}
-              id={user.id}
-              avatarUrl={user.avatarUrl}
-              notificationCount={user.notificationCount}
+              name={displayUser.name}
+              id={displayUser.id}
+              avatarUrl={displayUser.avatarUrl}
+              notificationCount={displayUser.notificationCount}
               days={weekDays}
               selectedDayId={selectedDay}
               onSelectDay={setSelectedDay}

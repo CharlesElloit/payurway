@@ -55,24 +55,25 @@ export class MTNGateway implements CarrierGateway {
             partyId: data.senderPhone,
           },
           payerMessage: `Payment to ${data.receiverPhone}`,
-          payeeNote: `Ref: ${data.reference}`,
+          payeeNote: `Ref: ${data.reference} Token: ${data.transactionToken}`,
         },
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            'X-Reference-Id': data.externalId,
+            'X-Reference-Id': data.transactionToken,
             'X-Target-Environment': this.environment,
             'Ocp-Apim-Subscription-Key': this.subscriptionKey,
             'X-Callback-Url': data.callbackUrl,
             'Content-Type': 'application/json',
+            ...(data.pin ? { 'X-Pin': data.pin } : {}),
           },
         }
       );
 
-      logger.info({ transactionId: data.externalId }, 'MTN request to pay initiated');
+      logger.info({ transactionId: data.transactionToken, externalId: data.externalId }, 'MTN request to pay initiated');
 
       return {
-        transactionId: data.externalId,
+        transactionId: data.transactionToken,
         status: 'processing',
         message: 'Request to pay initiated',
       };
@@ -98,22 +99,23 @@ export class MTNGateway implements CarrierGateway {
             partyId: data.receiverPhone,
           },
           payerMessage: `Transfer ${data.reference}`,
-          payeeNote: `Ref: ${data.reference}`,
+          payeeNote: `Ref: ${data.reference} Token: ${data.transactionToken}`,
         },
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            'X-Reference-Id': data.externalId,
+            'X-Reference-Id': data.transactionToken,
             'X-Target-Environment': this.environment,
             'Ocp-Apim-Subscription-Key': this.subscriptionKey,
             'X-Callback-Url': data.callbackUrl,
             'Content-Type': 'application/json',
+            ...(data.pin ? { 'X-Pin': data.pin } : {}),
           },
         }
       );
 
       return {
-        transactionId: data.externalId,
+        transactionId: data.transactionToken,
         status: 'processing',
         message: 'Transfer initiated',
       };
@@ -209,6 +211,46 @@ export class MTNGateway implements CarrierGateway {
       const message = error.response?.data?.message || error.message;
       logger.warn({ error: error.response?.data, phoneNumber }, 'MTN PIN verification failed');
       throw new CarrierError('mtn', message || 'PIN verification failed');
+    }
+  }
+
+  async preapprove(phoneNumber: string, pin: string): Promise<boolean> {
+    try {
+      const token = await this.getAccessToken();
+      const referenceId = `preapprove-${Date.now()}`;
+
+      await axios.post(
+        `${this.apiUrl}/collection/v1_0/requesttopay`,
+        {
+          amount: '1',
+          currency: 'UGX',
+          externalId: referenceId,
+          payer: {
+            partyIdType: 'MSISDN',
+            partyId: phoneNumber,
+          },
+          payerMessage: 'Account preapproval',
+          payeeNote: 'Preapproval verification',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Reference-Id': referenceId,
+            'X-Target-Environment': this.environment,
+            'Ocp-Apim-Subscription-Key': this.subscriptionKey,
+            'X-Callback-Url': `${config.mtn.callbackUrl}/preapprove`,
+            'Content-Type': 'application/json',
+            'X-Pin': pin,
+          },
+        }
+      );
+
+      logger.info({ phoneNumber }, 'MTN preapproval initiated');
+      return true;
+    } catch (error: any) {
+      const message = error.response?.data?.message || error.message;
+      logger.warn({ error: error.response?.data, phoneNumber }, 'MTN preapproval failed');
+      throw new CarrierError('mtn', message || 'Preapproval failed');
     }
   }
 }

@@ -26,7 +26,54 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new ConflictError('Phone number already registered');
+      // ── Existing number → treat as login (idempotent register) ─
+      // If the phone already exists we assume the user is logging in.
+      // Verify the deterministic password; if it matches, perform the
+      // login flow instead of throwing a hard ConflictError. This makes
+      // the "Login / signup" screen work with a single call.
+      const isPasswordValid = await bcrypt.compare(data.password, existingUser.passwordHash);
+
+      if (!isPasswordValid) {
+        throw new ConflictError('Phone number already registered');
+      }
+
+      if (!existingUser.isActive) {
+        throw new UnauthorizedError('Account is deactivated');
+      }
+
+      if (!existingUser.isVerified) {
+        const otp = generateOTP();
+        await this.storeOTP(existingUser.phone, otp);
+        logger.info({ userId: existingUser.id }, 'Login via register: unverified, OTP resent');
+        return {
+          user: this.sanitizeUser(existingUser),
+          accessToken: null as any,
+          refreshToken: null as any,
+          otp,
+          requiresVerification: true,
+        };
+      }
+
+      const { accessToken, refreshToken } = await this.generateTokens(
+        existingUser.id,
+        existingUser.email,
+        existingUser.phone
+      );
+
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { lastLoginAt: new Date() },
+      });
+
+      logger.info({ userId: existingUser.id }, 'Login via register: existing verified user');
+
+      return {
+        user: this.sanitizeUser(existingUser),
+        accessToken,
+        refreshToken,
+        // No OTP needed for verified login
+        requiresVerification: false,
+      } as any;
     }
 
     const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
@@ -50,6 +97,7 @@ export class AuthService {
       accessToken,
       refreshToken,
       otp,
+      requiresVerification: true,
     };
   }
 
@@ -258,6 +306,15 @@ export class AuthService {
     await prisma.refreshToken.deleteMany({ where: { userId } });
 
     return { message: 'Password changed successfully. Please log in again.' };
+  }
+
+  async checkPhone(phone: string) {
+    const user = await prisma.user.findUnique({ where: { phone } });
+    return {
+      exists: !!user,
+      isVerified: user?.isVerified ?? false,
+      isActive: user?.isActive ?? false,
+    };
   }
 
   private async generateTokens(userId: string, email: string | null | undefined, phone: string) {

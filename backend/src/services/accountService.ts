@@ -50,6 +50,54 @@ export class AccountService {
     };
   }
 
+  async preapproveAccount(userId: string, accountId: string, pin: string) {
+    const account = await prisma.mobileMoneyAccount.findFirst({
+      where: { id: accountId, userId, isActive: true, verificationStatus: 'verified' },
+    });
+
+    if (!account) throw new NotFoundError('Verified account not found');
+
+    if (account.isPreapproved) {
+      return { message: 'Account is already preapproved', preapprovedAt: account.preapprovedAt };
+    }
+
+    const gateway = carrierGatewayFactory(account.carrier as Carrier);
+    await gateway.preapprove(account.phoneNumber, pin);
+
+    const updated = await prisma.mobileMoneyAccount.update({
+      where: { id: accountId },
+      data: { isPreapproved: true, preapprovedAt: new Date() },
+    });
+
+    logger.info({ userId, accountId }, 'Account preapproved');
+
+    return {
+      message: 'Account preapproved successfully. Future transactions will not require PIN entry.',
+      preapprovedAt: updated.preapprovedAt,
+    };
+  }
+
+  async cancelPreapproval(userId: string, accountId: string) {
+    const account = await prisma.mobileMoneyAccount.findFirst({
+      where: { id: accountId, userId, isActive: true },
+    });
+
+    if (!account) throw new NotFoundError('Account not found');
+
+    if (!account.isPreapproved) {
+      return { message: 'Account is not preapproved' };
+    }
+
+    await prisma.mobileMoneyAccount.update({
+      where: { id: accountId },
+      data: { isPreapproved: false, preapprovedAt: null },
+    });
+
+    logger.info({ userId, accountId }, 'Preapproval cancelled');
+
+    return { message: 'Preapproval cancelled. PIN will be required for future transactions.' };
+  }
+
   async getAccounts(userId: string) {
     const accounts = await prisma.mobileMoneyAccount.findMany({
       where: { userId, isActive: true },

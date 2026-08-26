@@ -9,6 +9,7 @@ export interface CarrierGateway {
   checkStatus(transactionId: string): Promise<{ status: string; details?: any }>;
   getBalance(phoneNumber: string): Promise<{ balance: number; currency: string }>;
   verifyPin(phoneNumber: string, pin: string): Promise<boolean>;
+  preapprove(phoneNumber: string, pin: string): Promise<boolean>;
 }
 
 class CarrierGatewayFactory {

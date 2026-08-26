@@ -424,6 +424,7 @@ describe('PaymentService', () => {
       prismaMock.payment.update.mockResolvedValue(pendingPayment as any);
       prismaMock.mobileMoneyAccount.findFirst.mockResolvedValue({
         encryptedPin: 'encrypted:1234',
+        isPreapproved: true,
       } as any);
       (accountService.getDecryptedPin as jest.Mock).mockResolvedValue('1234');
       mockGateway.requestToPay.mockResolvedValue({

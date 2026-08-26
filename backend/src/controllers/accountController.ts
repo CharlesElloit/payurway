@@ -66,6 +66,24 @@ export class AccountController {
       next(error);
     }
   }
+
+  async preapproveAccount(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await accountService.preapproveAccount(req.user!.id, req.params.id, req.body.pin);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async cancelPreapproval(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const result = await accountService.cancelPreapproval(req.user!.id, req.params.id);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const accountController = new AccountController();

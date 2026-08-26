@@ -31,6 +31,12 @@ export function generateTransactionReference(): string {
   return `PMB-${timestamp}-${random}`.toUpperCase();
 }
 
+export function generateTransactionToken(): string {
+  const timestamp = Date.now().toString(36);
+  const random = crypto.randomBytes(5).toString('hex');
+  return `TXT-${timestamp}-${random}`.toUpperCase();
+}
+
 export function normalizePhoneNumber(phone: string, countryCode = '256'): string {
   const cleaned = phone.replace(/\D/g, '');
   if (cleaned.startsWith(countryCode)) {

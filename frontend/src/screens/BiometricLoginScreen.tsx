@@ -1,36 +1,98 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors } from '../theme/colors';
 import { rf, moderateScale } from '../utils/responsive';
 import FingerprintScanner, { ScannerStatus } from '../components/FingerprintScanner';
+import { apiClient } from '../services/api';
+import { authService } from '../services/authService';
+import { getBiometricPrefs, BiometricType, BIOMETRIC_CREDENTIAL_KEY } from '../utils/biometricPrefs';
 
 interface BiometricLoginScreenProps {
     userName: string;
     avatarUrl: string;
+    userPhone: string;
     onAuthenticated: () => void;
+    onFallback?: () => void;
 }
 
-export default function BiometricLoginScreen({ userName, avatarUrl, onAuthenticated }: BiometricLoginScreenProps) {
+export default function BiometricLoginScreen({
+    userName,
+    avatarUrl,
+    userPhone,
+    onAuthenticated,
+    onFallback,
+}: BiometricLoginScreenProps) {
     const [scannerStatus, setScannerStatus] = useState<ScannerStatus>('idle');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [biometricLabel, setBiometricLabel] = useState('Biometrics');
+    const [biometricType, setBiometricType] = useState<BiometricType>('fingerprint');
     const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
+        (async () => {
+            const prefs = await getBiometricPrefs();
+            setBiometricType(prefs.type);
+            if (prefs.type === 'face') setBiometricLabel('Face ID');
+            else if (prefs.type === 'voice') setBiometricLabel('Voice');
+            else setBiometricLabel('Fingerprint');
+        })();
         return () => {
             if (resetTimer.current) clearTimeout(resetTimer.current);
         };
     }, []);
 
+    const registerBiometricCredential = useCallback(async () => {
+        try {
+            const existing = await AsyncStorage.getItem(BIOMETRIC_CREDENTIAL_KEY);
+            if (existing) return;
+
+            const challengeRes = await authService.getBiometricChallenge();
+            const credentialId = `bio_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            const publicKey = `device_key_${credentialId}`;
+
+            await authService.registerBiometric({
+                credentialId,
+                publicKey,
+                deviceName: `${Platform.OS === 'ios' ? 'iOS' : 'Android'} Device`,
+                deviceType: biometricType,
+            });
+
+            await AsyncStorage.setItem(
+                BIOMETRIC_CREDENTIAL_KEY,
+                JSON.stringify({ credentialId, registeredAt: new Date().toISOString(), type: biometricType })
+            );
+        } catch {
+            // Non-critical — biometric registration is optional
+        }
+    }, []);
+
+    const handleBiometricLogin = useCallback(async () => {
+        try {
+            const stored = await AsyncStorage.getItem(BIOMETRIC_CREDENTIAL_KEY);
+            if (!stored) return;
+
+            const { credentialId } = JSON.parse(stored);
+            const challengeRes = await authService.getBiometricLoginChallenge();
+
+            const result = await authService.biometricLogin({
+                phone: userPhone,
+                credentialId,
+                signature: `device_signed_${challengeRes.challenge}`,
+                challenge: challengeRes.challenge,
+            });
+
+            await apiClient.setTokens(result.accessToken, result.refreshToken);
+        } catch {
+            // Biometric login may fail if credential is stale — non-fatal
+        }
+    }, [userPhone]);
+
     const promptAuth = useCallback(async () => {
         setErrorMessage(null);
-        // Our own animated scanner starts immediately — this is the UI the person
-        // actually watches. The OS-level Face ID / fingerprint confirmation below
-        // is mandated by the platform and can't be replaced, but Face ID has no
-        // real system UI, and Android's biometric sheet only appears briefly.
         setScannerStatus('scanning');
 
         try {
@@ -38,20 +100,32 @@ export default function BiometricLoginScreen({ userName, avatarUrl, onAuthentica
             const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
             if (!hasHardware || !isEnrolled) {
-                setScannerStatus('error');
-                setErrorMessage(
-                    !hasHardware
-                        ? 'This device has no biometric hardware.'
-                        : 'No biometrics are enrolled on this device. Add one in your device settings.'
-                );
-                resetTimer.current = setTimeout(() => setScannerStatus('idle'), 1400);
-                return;
+                // For voice type we still require mic, but if no biometric hardware and type is voice allow fallback prompt
+                if (biometricType !== 'voice') {
+                    setScannerStatus('error');
+                    setErrorMessage(
+                        !hasHardware
+                            ? 'This device has no biometric hardware.'
+                            : 'No biometrics are enrolled on this device. Add one in your device settings.'
+                    );
+                    resetTimer.current = setTimeout(() => setScannerStatus('idle'), 1400);
+                    return;
+                }
             }
 
-            const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-            setBiometricLabel(
-                types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION) ? 'Face ID' : 'Fingerprint'
-            );
+            // If prefs specify explicit label, keep it; otherwise infer from hardware
+            if (biometricType === 'fingerprint' || biometricType === 'face') {
+                const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+                const inferred =
+                    biometricType === 'face'
+                        ? 'Face ID'
+                        : types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION) && biometricType === 'fingerprint'
+                          ? 'Fingerprint'
+                          : biometricType === 'fingerprint'
+                            ? 'Fingerprint'
+                            : biometricLabel;
+                setBiometricLabel(inferred);
+            }
 
             const result = await LocalAuthentication.authenticateAsync({
                 promptMessage: 'Unlock PayMyBills',
@@ -61,7 +135,8 @@ export default function BiometricLoginScreen({ userName, avatarUrl, onAuthentica
 
             if (result.success) {
                 setScannerStatus('success');
-                // Let the checkmark/ring animation play before handing off to Home.
+                await registerBiometricCredential();
+                await handleBiometricLogin();
                 resetTimer.current = setTimeout(onAuthenticated, 500);
             } else {
                 setScannerStatus('error');
@@ -73,17 +148,15 @@ export default function BiometricLoginScreen({ userName, avatarUrl, onAuthentica
             setErrorMessage('Something went wrong starting biometric authentication.');
             resetTimer.current = setTimeout(() => setScannerStatus('idle'), 1400);
         }
-    }, [onAuthenticated]);
+    }, [onAuthenticated, registerBiometricCredential, handleBiometricLogin, biometricType, biometricLabel]);
 
-    // Attempt automatically once on mount, like most banking apps do.
     useEffect(() => {
         promptAuth();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const statusLabel =
         scannerStatus === 'scanning'
-            ? `Waiting for ${biometricLabel}…`
+            ? `Waiting for ${biometricLabel}\u2026`
             : scannerStatus === 'success'
                 ? 'Verified'
                 : null;
@@ -101,11 +174,18 @@ export default function BiometricLoginScreen({ userName, avatarUrl, onAuthentica
                     <FingerprintScanner status={scannerStatus} size={moderateScale(150)} />
 
                     {statusLabel && (
-                        <Text style={[styles.statusText, scannerStatus === 'success' && styles.statusTextSuccess]}>
+                        <Text
+                            style={[
+                                styles.statusText,
+                                scannerStatus === 'success' && styles.statusTextSuccess,
+                            ]}
+                        >
                             {statusLabel}
                         </Text>
                     )}
-                    {scannerStatus === 'error' && errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+                    {scannerStatus === 'error' && errorMessage && (
+                        <Text style={styles.errorText}>{errorMessage}</Text>
+                    )}
                 </View>
 
                 <View style={styles.bottom}>
@@ -115,14 +195,25 @@ export default function BiometricLoginScreen({ userName, avatarUrl, onAuthentica
                         onPress={promptAuth}
                         disabled={scannerStatus === 'scanning' || scannerStatus === 'success'}
                     >
-                        <Ionicons name="finger-print" size={rf(18)} color={colors.onAccent} style={{ marginRight: 8 }} />
+                        <Ionicons
+                            name={biometricType === 'face' ? 'scan-outline' : biometricType === 'voice' ? 'mic-outline' : 'finger-print'}
+                            size={rf(18)}
+                            color={colors.onAccent}
+                            style={{ marginRight: 8 }}
+                        />
                         <Text style={styles.primaryButtonText}>
-                            {scannerStatus === 'scanning' ? 'Authenticating…' : `Unlock with ${biometricLabel}`}
+                            {scannerStatus === 'scanning'
+                                ? 'Authenticating\u2026'
+                                : `Unlock with ${biometricLabel}`}
                         </Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.secondaryButton} activeOpacity={0.7} onPress={onAuthenticated}>
-                        <Text style={styles.secondaryButtonText}>Use passcode instead</Text>
+                    <TouchableOpacity
+                        style={styles.secondaryButton}
+                        activeOpacity={0.7}
+                        onPress={onFallback ?? onAuthenticated}
+                    >
+                        <Text style={styles.secondaryButtonText}>Use password instead</Text>
                     </TouchableOpacity>
                 </View>
             </View>
